@@ -1,0 +1,178 @@
+-- =============================================================================
+-- PARTNER <-> CUSTOMER CALL RECORDINGS • DELHI • JAN–MAR 2026 (non-BDO)
+-- =============================================================================
+-- Purpose: pull recording URLs for calls in the ASSIGNED -> decision/install
+-- window for the Delhi non-BDO cohort, scoped to bookings created in Jan-Mar
+-- 2026 (UCCL has full coverage since 2025-12-31).
+--
+-- Parity with ../location_accuracy/query_unified_correl.txt:
+--   - same delhi_mobiles filter (booking_logs JSON city/zone/state)
+--   - same non-BDO filter (exclude mobiles with prospect_identified)
+--   - t_serviceability_logs INNER JOIN with serviceable=TRUE
+--     (lookback: 10 days earlier than cohort start, per convention)
+--
+-- Output: one row per (mobile, partner_id, call_id). Carries decision_event
+-- + decision_reason + installed flag for transcript <-> dropdown crosstab.
+-- =============================================================================
+
+WITH
+delhi_mobiles AS (
+    SELECT DISTINCT mobile
+    FROM booking_logs
+    WHERE added_time >= '2026-01-01'
+      AND added_time <  '2026-04-01'
+      AND (
+            LOWER(PARSE_JSON(data):city::STRING)  = 'delhi'
+         OR LOWER(PARSE_JSON(data):zone::STRING)  = 'delhi'
+         OR LOWER(PARSE_JSON(data):state::STRING) LIKE '%delhi%'
+      )
+),
+
+-- BDO flag: prospect_identified marker. We exclude these mobiles.
+bdo_mobiles AS (
+    SELECT DISTINCT mobile
+    FROM booking_logs
+    WHERE event_name = 'prospect_identified'
+      AND added_time >= '2026-01-01'
+      AND added_time <  '2026-04-01'
+),
+
+-- Serviceability gate. 10-day lookback relative to cohort start per convention
+-- (serviceability check precedes booking; use earlier created_at bound).
+booking_location AS (
+    SELECT mobile, booking_lat, booking_lng, g1_time
+    FROM (
+        SELECT
+            mobile                                                                          AS mobile,
+            TRY_CAST(NULLIF(SPLIT_PART(
+                PARSE_JSON(response):genie_downstream_context:g1_lead_coords::STRING, ',', 1
+            ), '') AS DOUBLE)                                                                AS booking_lat,
+            TRY_CAST(NULLIF(SPLIT_PART(
+                PARSE_JSON(response):genie_downstream_context:g1_lead_coords::STRING, ',', 2
+            ), '') AS DOUBLE)                                                                AS booking_lng,
+            created_at                                                                       AS g1_time,
+            ROW_NUMBER() OVER (
+                PARTITION BY mobile
+                ORDER BY created_at DESC
+            ) AS rn
+        FROM prod_db.mysql_rds_genie_genie1.t_serviceability_logs
+        WHERE PARSE_JSON(response):serviceable::BOOLEAN = TRUE
+          AND created_at >= '2025-12-22'
+          AND created_at <  '2026-04-01'
+    )
+    WHERE rn = 1
+),
+
+-- First ASSIGNED event per (mobile, partner). Anchors the call-window join.
+assigned AS (
+    SELECT mobile, partner_id, assigned_time
+    FROM (
+        SELECT
+            mobile,
+            account_id::STRING                                     AS partner_id,
+            added_time                                             AS assigned_time,
+            ROW_NUMBER() OVER (PARTITION BY mobile, account_id ORDER BY added_time) AS rn
+        FROM prod_db.public.task_logs
+        WHERE event_name = 'ASSIGNED'
+          AND added_time >= '2026-01-01'
+          AND added_time <  '2026-04-15'
+    )
+    WHERE rn = 1
+),
+
+-- First terminal decision event per (mobile, partner). Kept for transcript <-> dropdown crosstab.
+decisions AS (
+    SELECT mobile, partner_id, decision_time, event_name AS decision_event, decision_reason
+    FROM (
+        SELECT
+            mobile,
+            account_id::STRING                                     AS partner_id,
+            TRY_PARSE_JSON(data):remarks::STRING                   AS decision_reason,
+            event_name,
+            added_time                                             AS decision_time,
+            ROW_NUMBER() OVER (PARTITION BY mobile, account_id ORDER BY added_time) AS rn
+        FROM prod_db.public.task_logs
+        WHERE added_time >= '2026-01-01'
+          AND added_time <  '2026-04-15'
+          AND event_name IN ('DECLINED', 'OTP_VERIFIED', 'INTERESTED', 'ASSIGNED')
+    )
+    WHERE rn = 1
+),
+
+-- Installed (OTP_VERIFIED) for the same (mobile, partner).
+installed AS (
+    SELECT mobile, partner_id, installed_time
+    FROM (
+        SELECT
+            mobile,
+            account_id::STRING                                     AS partner_id,
+            added_time                                             AS installed_time,
+            ROW_NUMBER() OVER (PARTITION BY mobile, account_id ORDER BY added_time) AS rn
+        FROM prod_db.public.task_logs
+        WHERE event_name = 'OTP_VERIFIED'
+          AND added_time >= '2026-01-01'
+          AND added_time <  '2026-04-15'
+    )
+    WHERE rn = 1
+),
+
+-- Partner<->Customer calls routed through Exotel. RIGHT(number,10) normalization
+-- per data dictionary. Clean out the 'null' / '' recording_url sentinels.
+calls AS (
+    SELECT
+        c.call_id,
+        RIGHT(c.from_number, 10) AS from_mobile,
+        RIGHT(c.to_number,   10) AS to_mobile,
+        c.call_status,
+        TRY_CAST(c.call_duration AS NUMBER) AS call_duration,
+        c.disconnected_by,
+        CASE
+            WHEN c.recording_url IS NULL
+              OR TRIM(c.recording_url) IN ('', 'null')
+            THEN NULL
+            ELSE c.recording_url
+        END                                 AS recording_url,
+        c.created_at                        AS call_time
+    FROM prod_db.postgres_rds_partner_call_log_ivr.user_connection_call_logs c
+    WHERE c.created_at >= '2026-01-01'
+      AND c.created_at <  '2026-04-15'
+),
+
+-- Scope each call to a (mobile, partner) pair: call_time between assigned_time
+-- and assigned_time + 14 days.
+scoped AS (
+    SELECT
+        dm.mobile,
+        a.partner_id,
+        a.assigned_time,
+        d.decision_event,
+        d.decision_reason,
+        d.decision_time,
+        i.installed_time,
+        CASE WHEN i.partner_id IS NOT NULL THEN 1 ELSE 0 END AS installed,
+        CASE WHEN b.mobile IS NOT NULL THEN 1 ELSE 0 END     AS bdo_lead,
+        c.call_id,
+        c.call_status,
+        c.call_duration,
+        c.disconnected_by,
+        c.recording_url,
+        c.call_time
+    FROM delhi_mobiles dm
+    INNER JOIN booking_location bl ON dm.mobile::STRING   = bl.mobile::STRING
+    INNER JOIN assigned   a  ON dm.mobile::STRING   = a.mobile::STRING
+    LEFT  JOIN decisions  d  ON a.mobile::STRING    = d.mobile::STRING
+                            AND a.partner_id        = d.partner_id
+    LEFT  JOIN installed  i  ON a.mobile::STRING    = i.mobile::STRING
+                            AND a.partner_id        = i.partner_id
+    LEFT  JOIN bdo_mobiles b ON a.mobile::STRING    = b.mobile::STRING
+    INNER JOIN calls c
+        ON (c.from_mobile = a.mobile OR c.to_mobile = a.mobile)
+       AND c.call_time >= a.assigned_time
+       AND c.call_time <  DATEADD(day, 14, a.assigned_time)
+    WHERE c.recording_url IS NOT NULL
+)
+
+SELECT *
+FROM scoped
+WHERE bdo_lead = 0
+ORDER BY mobile, partner_id, call_time;

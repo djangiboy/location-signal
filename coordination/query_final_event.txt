@@ -1,0 +1,129 @@
+-- =============================================================================
+-- FINAL EVENT per (mobile, partner) — Jan-Mar 2026 Delhi non-BDO
+-- =============================================================================
+-- For each pair in the master assigned cohort, find:
+--   (a) the LATEST task_logs event AFTER the ASSIGNED event (final_event),
+--   (b) the LATEST DECLINED event AFTER the ASSIGNED event, if any (post_assign_decline),
+-- along with event_name, remarks, and decline source from the data JSON.
+--
+-- This answers: "when a partner assigns but can't install, what terminal event
+-- do they log, and what reason do they cite?"
+-- =============================================================================
+
+WITH
+delhi_mobiles AS (
+    SELECT DISTINCT mobile FROM booking_logs
+    WHERE added_time >= '2026-01-01' AND added_time < '2026-04-01'
+      AND ( LOWER(PARSE_JSON(data):city::STRING)='delhi'
+         OR LOWER(PARSE_JSON(data):zone::STRING)='delhi'
+         OR LOWER(PARSE_JSON(data):state::STRING) LIKE '%delhi%')
+),
+
+bdo_mobiles AS (
+    SELECT DISTINCT mobile FROM booking_logs
+    WHERE event_name='prospect_identified'
+      AND added_time >= '2026-01-01' AND added_time < '2026-04-01'
+),
+
+booking_location AS (
+    SELECT mobile FROM (
+        SELECT mobile, ROW_NUMBER() OVER (PARTITION BY mobile ORDER BY created_at DESC) rn
+        FROM prod_db.mysql_rds_genie_genie1.t_serviceability_logs
+        WHERE PARSE_JSON(response):serviceable::BOOLEAN=TRUE
+          AND created_at >= '2025-12-22' AND created_at < '2026-04-01'
+    ) WHERE rn=1
+),
+
+-- First ASSIGNED event per (mobile, partner), anchors the "after" window
+assigned AS (
+    SELECT mobile, partner_id, assigned_time FROM (
+        SELECT mobile, account_id::STRING AS partner_id, added_time AS assigned_time,
+               ROW_NUMBER() OVER (PARTITION BY mobile, account_id ORDER BY added_time) rn
+        FROM prod_db.public.task_logs
+        WHERE event_name='ASSIGNED'
+          AND added_time >= '2026-01-01' AND added_time < '2026-04-15'
+    ) WHERE rn=1
+),
+
+-- Master cohort: Delhi + serviceable + non-BDO
+master AS (
+    SELECT a.mobile, a.partner_id, a.assigned_time
+    FROM delhi_mobiles dm
+    INNER JOIN assigned a ON dm.mobile::STRING=a.mobile::STRING
+    INNER JOIN booking_location bl ON a.mobile::STRING=bl.mobile::STRING
+    LEFT  JOIN bdo_mobiles b ON a.mobile::STRING=b.mobile::STRING
+    WHERE b.mobile IS NULL
+),
+
+-- All task_logs events for master pairs, at or after assigned_time
+post_assign_events AS (
+    SELECT
+        m.mobile,
+        m.partner_id,
+        m.assigned_time,
+        t.event_name,
+        TRY_PARSE_JSON(t.data):remarks::STRING AS remarks,
+        TRY_PARSE_JSON(t.data):source::STRING  AS source,
+        t.added_time
+    FROM master m
+    INNER JOIN prod_db.public.task_logs t
+        ON t.mobile = m.mobile
+       AND t.account_id::STRING = m.partner_id
+    WHERE t.added_time >= m.assigned_time
+      AND t.added_time <  '2026-04-30'
+),
+
+-- Latest event of any kind after ASSIGNED
+final_event AS (
+    SELECT mobile, partner_id, event_name AS final_event,
+           remarks AS final_remarks, source AS final_source,
+           added_time AS final_time
+    FROM (
+        SELECT *, ROW_NUMBER() OVER (PARTITION BY mobile, partner_id ORDER BY added_time DESC) rn
+        FROM post_assign_events
+    ) WHERE rn = 1
+),
+
+-- Latest DECLINED event after ASSIGNED (if any) — partner gave up on this match
+any_post_assign_decline AS (
+    SELECT mobile, partner_id,
+           remarks AS decline_remarks,
+           source  AS decline_source,
+           added_time AS decline_time
+    FROM (
+        SELECT *, ROW_NUMBER() OVER (PARTITION BY mobile, partner_id ORDER BY added_time DESC) rn
+        FROM post_assign_events
+        WHERE event_name = 'DECLINED'
+    ) WHERE rn = 1
+),
+
+-- Count of all post-assign events, and any OTP_VERIFIED marker
+event_counts AS (
+    SELECT
+        mobile, partner_id,
+        COUNT(*)                                                            AS n_post_events,
+        SUM(CASE WHEN event_name = 'OTP_VERIFIED' THEN 1 ELSE 0 END)        AS n_otp,
+        SUM(CASE WHEN event_name = 'DECLINED'     THEN 1 ELSE 0 END)        AS n_decline_post
+    FROM post_assign_events
+    GROUP BY mobile, partner_id
+)
+
+SELECT
+    m.mobile,
+    m.partner_id,
+    m.assigned_time,
+    fe.final_event,
+    fe.final_remarks,
+    fe.final_source,
+    fe.final_time,
+    ad.decline_remarks,
+    ad.decline_source,
+    ad.decline_time,
+    COALESCE(ec.n_post_events, 0)  AS n_post_events,
+    COALESCE(ec.n_otp, 0)          AS n_otp_verified,
+    COALESCE(ec.n_decline_post, 0) AS n_decline_post
+FROM master m
+LEFT JOIN final_event           fe ON m.mobile = fe.mobile AND m.partner_id = fe.partner_id
+LEFT JOIN any_post_assign_decline ad ON m.mobile = ad.mobile AND m.partner_id = ad.partner_id
+LEFT JOIN event_counts          ec ON m.mobile = ec.mobile AND m.partner_id = ec.partner_id
+ORDER BY m.mobile, m.partner_id;

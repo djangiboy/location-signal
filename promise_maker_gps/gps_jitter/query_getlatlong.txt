@@ -1,0 +1,9 @@
+SELECT
+    mobile,
+    TRY_CAST(PARSE_JSON(data):lat::STRING AS DOUBLE) AS install_lat,
+    TRY_CAST(PARSE_JSON(data):lng::STRING AS DOUBLE) AS install_lng,
+    added_time,
+    row_number() over (partition by mobile order by added_time) as row_cnt
+FROM booking_logs
+WHERE event_name = 'wifi_connected_location_captured'
+AND cast(added_time as date) between '2025-09-01' and '2026-01-26'

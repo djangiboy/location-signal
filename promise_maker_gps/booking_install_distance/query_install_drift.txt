@@ -1,0 +1,176 @@
+-- =============================================================================
+-- STAGE B: BOOKING-vs-INSTALL LAT/LNG DRIFT
+-- Delhi, Dec 2025 installed cohort
+-- Per mobile: booking_lat/lng (at serviceability check) vs install_lat/lng
+-- (first wifi_connected_location_captured event post-install).
+-- Haversine drift computed SQL-side.
+-- bdo_lead pulled as column; filter bdo_lead = 0 applied Python-side
+-- (preserves funnel visibility).
+-- =============================================================================
+
+WITH
+
+-- -----------------------------------------------------------------------------
+-- Delhi Dec-2025 mobiles
+-- -----------------------------------------------------------------------------
+delhi_mobiles AS (
+    SELECT DISTINCT mobile
+    FROM booking_logs
+    WHERE added_time >= '2025-12-01'
+      AND added_time <  '2026-01-01'
+      AND (
+            LOWER(PARSE_JSON(data):city::STRING)  = 'delhi'
+         OR LOWER(PARSE_JSON(data):zone::STRING)  = 'delhi'
+         OR LOWER(PARSE_JSON(data):state::STRING) LIKE '%delhi%'
+      )
+),
+
+-- -----------------------------------------------------------------------------
+-- BDO flag: mobiles that appeared in prospect_identified (ops-originated)
+-- -----------------------------------------------------------------------------
+bdo_mobiles AS (
+    SELECT DISTINCT mobile
+    FROM booking_logs
+    WHERE event_name = 'prospect_identified'
+      AND added_time >= '2025-12-01'
+      AND added_time <  '2026-01-01'
+),
+
+-- -----------------------------------------------------------------------------
+-- Installed mobiles: lead_state = 'installed' in cohort window
+-- -----------------------------------------------------------------------------
+installed_mobiles AS (
+    SELECT
+        mobile,
+        MIN(added_time) AS installed_at
+    FROM booking_logs
+    WHERE event_name = 'lead_state_changed'
+      AND PARSE_JSON(data):lead_state::STRING = 'installed'
+      AND added_time >= '2025-12-01'
+      AND added_time <  '2026-01-01'
+    GROUP BY mobile
+),
+
+-- -----------------------------------------------------------------------------
+-- Fee-captured at: first booking_verified event per mobile
+-- -----------------------------------------------------------------------------
+fee_captured AS (
+    SELECT
+        mobile,
+        MIN(added_time) AS fee_captured_at
+    FROM booking_logs
+    WHERE event_name = 'lead_state_changed'
+      AND PARSE_JSON(data):lead_state::STRING = 'booking_verified'
+      AND added_time >= '2025-12-01'
+      AND added_time <  '2026-01-01'
+    GROUP BY mobile
+),
+
+-- -----------------------------------------------------------------------------
+-- Booking lat/lng: from lead_state_changed where lead_state = 'serviceable'.
+-- If multiple serviceable events exist per mobile, take the latest.
+-- -----------------------------------------------------------------------------
+booking_location AS (
+    SELECT mobile, booking_lat, booking_lng, booking_loc_time
+    FROM (
+        SELECT
+            mobile,
+            TRY_CAST(PARSE_JSON(data):lat::STRING AS DOUBLE) AS booking_lat,
+            TRY_CAST(PARSE_JSON(data):lng::STRING AS DOUBLE) AS booking_lng,
+            added_time AS booking_loc_time,
+            ROW_NUMBER() OVER (PARTITION BY mobile ORDER BY added_time DESC) AS rn
+        FROM booking_logs
+        WHERE event_name = 'lead_state_changed'
+          AND PARSE_JSON(data):lead_state::STRING = 'serviceable'
+          AND added_time >= '2025-12-01'
+          AND added_time <  '2026-01-01'
+    )
+    WHERE rn = 1
+),
+
+-- -----------------------------------------------------------------------------
+-- Booking accuracy: device self-report at capture time
+-- -----------------------------------------------------------------------------
+booking_accuracy AS (
+    SELECT mobile, booking_accuracy
+    FROM (
+        SELECT
+            mobile,
+            TRY_CAST(PARSE_JSON(data):accuracy_in_meters::STRING AS DOUBLE) AS booking_accuracy,
+            ROW_NUMBER() OVER (PARTITION BY mobile ORDER BY added_time ASC) AS rn
+        FROM booking_logs
+        WHERE event_name = 'location_accuracy_captured'
+          AND added_time >= '2025-12-01'
+          AND added_time <  '2026-01-01'
+    )
+    WHERE rn = 1
+),
+
+-- -----------------------------------------------------------------------------
+-- Install lat/lng: FIRST wifi_connected_location_captured per mobile.
+-- Lookahead to 2026-02-28 so late installs in the cohort aren't missed.
+-- -----------------------------------------------------------------------------
+install_location AS (
+    SELECT mobile, install_lat, install_lng, install_ping_time
+    FROM (
+        SELECT
+            mobile,
+            TRY_CAST(PARSE_JSON(data):lat::STRING AS DOUBLE) AS install_lat,
+            TRY_CAST(PARSE_JSON(data):lng::STRING AS DOUBLE) AS install_lng,
+            added_time AS install_ping_time,
+            ROW_NUMBER() OVER (PARTITION BY mobile ORDER BY added_time ASC) AS rn
+        FROM booking_logs
+        WHERE event_name = 'wifi_connected_location_captured'
+          AND CAST(added_time AS DATE) BETWEEN '2025-12-01' AND '2026-02-28'
+    )
+    WHERE rn = 1
+)
+
+-- -----------------------------------------------------------------------------
+-- Assemble: Delhi Dec-2025 installed mobiles with all coords + drift
+-- -----------------------------------------------------------------------------
+SELECT
+    im.mobile,
+    fc.fee_captured_at,
+    im.installed_at,
+    bl.booking_lat,
+    bl.booking_lng,
+    bl.booking_loc_time,
+    ba.booking_accuracy,
+    il.install_lat,
+    il.install_lng,
+    il.install_ping_time,
+    CASE WHEN bm.mobile IS NOT NULL THEN 1 ELSE 0 END AS bdo_lead,
+
+    -- Haversine booking -> install (meters)
+    CASE
+        WHEN bl.booking_lat IS NOT NULL
+         AND il.install_lat IS NOT NULL THEN
+            2 * 6371000 * ASIN(SQRT(
+                POWER(SIN(RADIANS(il.install_lat - bl.booking_lat) / 2), 2)
+                + COS(RADIANS(bl.booking_lat)) * COS(RADIANS(il.install_lat))
+                * POWER(SIN(RADIANS(il.install_lng - bl.booking_lng) / 2), 2)
+            ))
+        ELSE NULL
+    END AS install_drift_m,
+
+    -- IST hour bucket at fee_captured_at (Rohan's original seven-bucket spec)
+    CASE
+        WHEN HOUR(CONVERT_TIMEZONE('UTC','Asia/Kolkata', fc.fee_captured_at)) >= 22
+          OR HOUR(CONVERT_TIMEZONE('UTC','Asia/Kolkata', fc.fee_captured_at)) < 4
+            THEN '22-04_at_home'
+        WHEN HOUR(CONVERT_TIMEZONE('UTC','Asia/Kolkata', fc.fee_captured_at)) < 6 THEN '04-06_early'
+        WHEN HOUR(CONVERT_TIMEZONE('UTC','Asia/Kolkata', fc.fee_captured_at)) < 9 THEN '06-09_morning'
+        WHEN HOUR(CONVERT_TIMEZONE('UTC','Asia/Kolkata', fc.fee_captured_at)) < 13 THEN '09-13_workday_am'
+        WHEN HOUR(CONVERT_TIMEZONE('UTC','Asia/Kolkata', fc.fee_captured_at)) < 16 THEN '13-16_afternoon'
+        WHEN HOUR(CONVERT_TIMEZONE('UTC','Asia/Kolkata', fc.fee_captured_at)) < 19 THEN '16-19_evening'
+        ELSE '19-22_night'
+    END AS time_bucket
+
+FROM installed_mobiles im
+INNER JOIN delhi_mobiles    dm ON dm.mobile = im.mobile
+LEFT  JOIN fee_captured     fc ON fc.mobile = im.mobile
+LEFT  JOIN booking_location bl ON bl.mobile = im.mobile
+LEFT  JOIN booking_accuracy ba ON ba.mobile = im.mobile
+LEFT  JOIN install_location il ON il.mobile = im.mobile
+LEFT  JOIN bdo_mobiles      bm ON bm.mobile = im.mobile

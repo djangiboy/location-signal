@@ -1,0 +1,148 @@
+-- =============================================================================
+-- DELHI ZONE • DEC 2025 • DECLINED-ONLY COHORT
+-- (decision_pairs filtered to event_name = 'DECLINED')
+-- =============================================================================
+
+WITH 
+delhi_mobiles AS (
+    SELECT DISTINCT mobile
+    FROM booking_logs
+    WHERE added_time >= '2025-12-01'
+      AND added_time <  '2026-01-01'
+      AND (
+            LOWER(PARSE_JSON(data):city::STRING)  = 'delhi'
+         OR LOWER(PARSE_JSON(data):zone::STRING)  = 'delhi'
+         OR LOWER(PARSE_JSON(data):state::STRING) LIKE '%delhi%'
+      )
+),
+
+allocation AS (
+    SELECT mobile, partner_id, nearest_distance, nearest_lat, nearest_lng, created_at
+    FROM (
+        SELECT
+            mobile                                                                      AS mobile,
+            ns.value:partner_id::STRING                                                 AS partner_id,
+            TRY_CAST(NULLIF(ns.value:reason:nearest_distance::STRING, '') AS DOUBLE)    AS nearest_distance,
+            TRY_CAST(NULLIF(SPLIT_PART(ns.value:reason:nearest_lat_lng::STRING,',',1), '') AS DOUBLE) AS nearest_lat,
+            TRY_CAST(NULLIF(SPLIT_PART(ns.value:reason:nearest_lat_lng::STRING,',',2), '') AS DOUBLE) AS nearest_lng,
+            created_at,
+            ROW_NUMBER() OVER (
+                PARTITION BY mobile, ns.value:partner_id::STRING
+                ORDER BY created_at DESC
+            ) AS rn
+        FROM prod_db.mysql_rds_genie_genie2.t_allocation_logs,
+        LATERAL FLATTEN(input => PARSE_JSON(data):notification_schedule) ns
+        WHERE created_at >= '2025-12-01'
+          AND created_at <  '2026-01-01'
+    )
+    WHERE rn = 1
+),
+decision_pairs AS (
+    SELECT mobile, partner_id, decision_time, event_name, decision_reason
+    FROM (
+        SELECT
+            mobile,
+            account_id::STRING                                      AS partner_id,
+            TRY_PARSE_JSON(data):remarks::STRING                    AS decision_reason,
+            event_name,
+            added_time                                              AS decision_time,
+            ROW_NUMBER() OVER (
+                PARTITION BY mobile, account_id::STRING
+                ORDER BY added_time 
+            ) AS rn
+        FROM prod_db.public.task_logs
+        WHERE event_name = 'DECLINED'
+          AND added_time >= '2025-12-01'
+          AND added_time <  '2026-01-01'
+          AND (TRY_PARSE_JSON(data):source::STRING != 'System_Force_Declined_Post_Assigned_72hours'
+               OR TRY_PARSE_JSON(data):source::STRING IS NULL)
+    )
+    WHERE rn = 1
+),
+booking_location AS (
+    SELECT mobile, booking_lat, booking_lng, g1_time
+    FROM (
+        SELECT
+            mobile                                                                          AS mobile,
+            TRY_CAST(NULLIF(SPLIT_PART(
+                PARSE_JSON(response):genie_downstream_context:g1_lead_coords::STRING, ',', 1
+            ), '') AS DOUBLE)                                                                  AS booking_lat,
+            TRY_CAST(NULLIF(SPLIT_PART(
+                PARSE_JSON(response):genie_downstream_context:g1_lead_coords::STRING, ',', 2
+            ), '') AS DOUBLE)                                                                  AS booking_lng,
+            created_at                                                                      AS g1_time,
+            ROW_NUMBER() OVER (
+                PARTITION BY mobile
+                ORDER BY created_at DESC
+            ) AS rn
+        FROM mysql_rds_genie_genie1.t_serviceability_logs             
+        WHERE PARSE_JSON(response):serviceable::BOOLEAN = TRUE
+        AND created_at >= '2025-11-20'
+          AND created_at <  '2026-01-01'
+         
+    )
+    WHERE rn = 1
+),
+
+
+booking_type AS (
+    SELECT mobile
+    FROM (
+        SELECT 
+            mobile,
+            ROW_NUMBER() OVER (PARTITION BY mobile ORDER BY added_time DESC) AS rn
+        FROM booking_logs 
+        WHERE event_name = 'prospect_identified'
+          AND added_time >= '2025-12-01'
+          AND added_time <  '2026-01-01'
+    ) a 
+    WHERE rn = 1
+),
+
+installed_decision AS (
+
+    select *
+    from
+    (
+        select mobile, added_time as installed_time, account_id as partner_id, 
+        row_number() over (partition by mobile order by added_time desc) as rn 
+        from prod_db.public.task_logs 
+        where event_name = 'OTP_VERIFIED'
+                  AND added_time >= '2025-12-01'
+                  AND added_time <  '2026-01-31'
+    
+    ) a 
+    where rn = 1
+),
+
+cohort AS (
+    SELECT
+        al.mobile,
+        al.partner_id,
+        al.nearest_distance,
+        al.nearest_lat,
+        al.nearest_lng,
+        bl.booking_lat,
+        bl.booking_lng,
+        bl.g1_time,
+        al.created_at   AS allocated_at,
+        dp.decision_time,
+        dp.decision_reason,
+        dp.event_name,
+        CASE WHEN bt.mobile IS NOT NULL THEN 1 ELSE 0 END AS bdo_lead,
+        case when id.partner_id = al.partner_id then 1 ELSE 0 END AS installed,
+        installed_time 
+    FROM delhi_mobiles dm
+    INNER JOIN allocation       al ON dm.mobile::STRING     = al.mobile::STRING
+    INNER JOIN decision_pairs   dp ON al.mobile::STRING     = dp.mobile::STRING 
+                                  AND al.partner_id::STRING = dp.partner_id::STRING
+                                  AND datediff(seconds, al.created_at, dp.decision_time) >0
+    INNER  JOIN booking_location bl ON al.mobile::STRING     = bl.mobile::STRING
+    LEFT  JOIN booking_type     bt ON al.mobile::STRING     = bt.mobile::STRING
+    LEFT JOIN installed_decision id on al.mobile::STRING = id.mobile::STRING
+                                    AND al.partner_id::STRING = id.partner_id::STRING
+                                    AND datediff(seconds, al.created_at, id.installed_time) >= 0
+)
+SELECT * FROM cohort;
+
+

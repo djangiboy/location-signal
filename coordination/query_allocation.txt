@@ -1,0 +1,100 @@
+-- =============================================================================
+-- ALLOCATION LOOKUP • DELHI • JAN–MAR 2026 (non-BDO)
+-- =============================================================================
+-- Pulls nearest_distance, nearest_type, probability from t_allocation_logs for
+-- the same cohort as query_pcalls.txt. Cohort here is used to compute DECILES
+-- so we can join transcript labels to decile/probability buckets.
+--
+-- Output: one row per (mobile, partner_id). rn=1 on latest allocation.
+-- =============================================================================
+
+WITH
+delhi_mobiles AS (
+    SELECT DISTINCT mobile
+    FROM booking_logs
+    WHERE added_time >= '2026-01-01'
+      AND added_time <  '2026-04-01'
+      AND (
+            LOWER(PARSE_JSON(data):city::STRING)  = 'delhi'
+         OR LOWER(PARSE_JSON(data):zone::STRING)  = 'delhi'
+         OR LOWER(PARSE_JSON(data):state::STRING) LIKE '%delhi%'
+      )
+),
+
+bdo_mobiles AS (
+    SELECT DISTINCT mobile
+    FROM booking_logs
+    WHERE event_name = 'prospect_identified'
+      AND added_time >= '2026-01-01'
+      AND added_time <  '2026-04-01'
+),
+
+booking_location AS (
+    SELECT mobile, booking_lat, booking_lng, g1_time
+    FROM (
+        SELECT
+            mobile                                                                          AS mobile,
+            TRY_CAST(NULLIF(SPLIT_PART(
+                PARSE_JSON(response):genie_downstream_context:g1_lead_coords::STRING, ',', 1
+            ), '') AS DOUBLE)                                                                AS booking_lat,
+            TRY_CAST(NULLIF(SPLIT_PART(
+                PARSE_JSON(response):genie_downstream_context:g1_lead_coords::STRING, ',', 2
+            ), '') AS DOUBLE)                                                                AS booking_lng,
+            created_at                                                                       AS g1_time,
+            ROW_NUMBER() OVER (PARTITION BY mobile ORDER BY created_at DESC) AS rn
+        FROM prod_db.mysql_rds_genie_genie1.t_serviceability_logs
+        WHERE PARSE_JSON(response):serviceable::BOOLEAN = TRUE
+          AND created_at >= '2025-12-22'
+          AND created_at <  '2026-04-01'
+    )
+    WHERE rn = 1
+),
+
+allocation AS (
+    SELECT mobile, partner_id, nearest_distance, nearest_lat, nearest_lng,
+           created_at, nearest_type, probability
+    FROM (
+        SELECT
+            mobile                                                                      AS mobile,
+            ns.value:partner_id::STRING                                                 AS partner_id,
+            ns.value:reason:nearest_type::STRING                                        AS nearest_type,
+            TRY_CAST(NULLIF(ns.value:reason:nearest_distance::STRING, '') AS DOUBLE)    AS nearest_distance,
+            TRY_CAST(NULLIF(SPLIT_PART(ns.value:reason:nearest_lat_lng::STRING,',',1), '') AS DOUBLE) AS nearest_lat,
+            TRY_CAST(NULLIF(SPLIT_PART(ns.value:reason:nearest_lat_lng::STRING,',',2), '') AS DOUBLE) AS nearest_lng,
+            TRY_CAST(NULLIF(ns.value:reason:probability::STRING, '') AS DOUBLE)         AS probability,
+            created_at,
+            ROW_NUMBER() OVER (
+                PARTITION BY mobile, ns.value:partner_id::STRING
+                ORDER BY created_at DESC
+            ) AS rn
+        FROM prod_db.mysql_rds_genie_genie2.t_allocation_logs,
+        LATERAL FLATTEN(input => PARSE_JSON(data):notification_schedule) ns
+        WHERE created_at >= '2026-01-01'
+          AND created_at <  '2026-04-15'
+    )
+    WHERE rn = 1
+),
+
+cohort AS (
+    SELECT
+        al.mobile,
+        al.partner_id,
+        al.nearest_distance,
+        al.nearest_type,
+        al.probability,
+        al.nearest_lat,
+        al.nearest_lng,
+        bl.booking_lat,
+        bl.booking_lng,
+        al.created_at AS allocated_at,
+        CASE WHEN b.mobile IS NOT NULL THEN 1 ELSE 0 END AS bdo_lead
+    FROM delhi_mobiles dm
+    INNER JOIN booking_location bl ON dm.mobile::STRING = bl.mobile::STRING
+    INNER JOIN allocation       al ON dm.mobile::STRING = al.mobile::STRING
+    LEFT  JOIN bdo_mobiles       b ON al.mobile::STRING = b.mobile::STRING
+)
+
+SELECT *
+FROM cohort
+WHERE bdo_lead = 0
+ORDER BY mobile, partner_id;

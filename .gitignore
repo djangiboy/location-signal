@@ -1,0 +1,58 @@
+# === Secrets — never commit ===
+db_connectors.py
+**/db_connectors.py
+
+# === Regenerable data artifacts ===
+# Large CSVs and binary hex caches — scripts regenerate these from SQL
+investigative/
+**/investigative/
+investigations/
+**/investigations/
+*.h5
+**/*.h5
+*.parquet
+**/*.parquet
+
+# Large exploratory notebook (118 MB, non-portable path to Rohan's local CSV).
+# Logic has already been summarized in promise_maker_gps/README.md. Regenerable.
+location_genie_analysis.ipynb
+**/location_genie_analysis.ipynb
+
+# Audio recordings (323 MB in coordination/audio_cache/) — regenerable via transcribe_calls.py
+audio_cache/
+**/audio_cache/
+
+# === Python runtime ===
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# === IDE / editor / shell state ===
+.claude/
+**/.claude/
+*.swp
+*.swo
+*~
+*#
+.*#
+.idea/
+.vscode/
+
+# === OS ===
+.DS_Store
+Thumbs.db
+
+# === Env / secrets ===
+.env
+.env.*
+*.pem
+*.key
+snowflake_keys/
+
+# === Session transcripts ===
+# These capture shell env vars and may contain API keys accidentally echoed
+# into terminal output. Never commit.
+session_transcript_*.md
+**/session_transcript_*.md

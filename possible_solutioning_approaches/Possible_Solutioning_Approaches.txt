@@ -1,0 +1,737 @@
+My solutioning approach will be this:
+
+GPS jitter exists.
+But, post allocation, we also see that install rates rank order by distance. Also, decline reasons due to area misclarity, etc, also rank order.
+In fact, when we look via GNN probs, which is self learning with install/decline decisions, we are able to see better discrimination. 
+Which means, partners are able to discern where they can isntall and where they can not. 
+Can the separation across deciles be better, With better input quality? Yes. 
+
+How can we make it better in the long term?
+- By getting consistent data on GPS aross booking journey, and even post install. So that, I can model jitter basis phone types, environmental factors etc.
+As of today, we dont get that. Has some other company ever done it? (Search online and find first, I think swiggy, dunzo have)
+
+As of now, 
+- We can leverage behavourial signals from partnrs, to make promises based on both isntall and decline decisions. Refer to the promise maker belief model, current model:
+We are identifying personalised partnr level serviceable boudnaries, and breaking them into hexes. Using concept of KDE to get desireability fields across decisions, Leveraging competition overlap and creating composite scores. Use ML to make promises accordingly. This gets better with our long term solutioning as well. 
+
+
+For the second problem, Partner gets text address, and he has to call customers and do to and fro on verifying.
+When customer is giving his lat long of home, before booking, why not leverage google landmark API to get nearest landmark list? 
+Confirm closest landmarks with customers in customer App, also lverage the chat feature of the app to get gali and floor information.
+And then do a gated check on partner's serviceability zones: If, for all solicited partners, the customer's location falls within a partner's serviceable boundary, then based on how deep it is, or in how deep a cluster it is, we can allow the booking to pass through with relevant landmark information.
+If it doesnt land in high serviceabiliy area, then before payment, in the chat, also ask customer to give photo of street and home for the partner. Or make a video from a nearest landmark and go to the house. Like a Reel. Also, I mark customer's location on a inhouse built map like a hexagon, with a radius equivalent to the jitter radius. 
+If customer gives wrong information, and partner declines, customer is informed with a signal that his inputs are not right for installation, and give him the details he had submitted, along with the video link. Feedback for him to be serious, or to tell him its a genuine decline. Also, trigger a call to get clarity on help needed with providing the right information.
+This is a gating approach. 
+
+And at the other end, 
+Partner sees this:
+- In a high density zone, near landmarks, and gully number and floor number
+- Also sees the video of customer
+
+If, he declines, he should be shown that that hexagon has become red. And his servioceable area polygon will get redder in that zone. So, that he knows that in future he will not get leads from that area. Feedback for him to guard against a false negative. 
+
+Also, on declining, ask him if he needs a human intervention to get clarity on something. Trigger a call to him.
+
+And this also makes information available at a common plane. And this should lead to decline in 1. decline rates and 2. In calls done to get clarity on address post assignment
+
+
+So,
+A ML approach to identify promise scope,
+A gating approach to create a guided intervention mechanism
+Feedback loop to put accountability on customer and partner as well
+A common language of address collection established
+
+
+ALso, sharing a conversation I had with another AI:
+
+
+
+
+
+ME:
+At user’s end:
+
+I should constantly stream nearby location address when user wants to give locaton. 
+
+Verify nearby landmark from it.
+
+Establish that he is where he wants to install. Give final landmark to partner. 
+
+Also take photo of his street view for partner to recognise
+
+
+For the partner:
+Rank text address lowest
+Give higher precedence to area within serviceable boundary
+Show nearest landmark and distance from it ->
+- If it is within serviceable domain:
+Ensure he reaches nearest landmark 
+- if not, then trigger human intervention to determine if it can be done 
+
+Get constant inputs of partner phone gps to know navigation areas. 
+
+
+
+I can model: 
+- Density of older installs -> partner boundaries
+- Calls done for address verification (calling for)
+- successful / failure of installs on those calls 
+- partner installing/not installing are signals that create serviceable areas 
+
+When partner gets address information, he shouldn’t have to get the need to call. 
+
+He should see nearest landmark (google address descriptors) 
+
+
+AI:
+The install problem is not mainly an “address text” problem.
+It is a **ground-truth place recognition** problem.
+
+There are 3 different realities:
+
+1. **What the user types**
+2. **Where the user actually is**
+3. **Where the partner can actually recognize and install**
+
+Your system should transform 1 → 2 → 3.
+
+Use:
+
+* live/continuous GPS for some seconds
+* nearby road/street/place labels
+* nearby landmark candidates
+* reverse geocode / address descriptors
+* maybe compass heading + motion state if available
+
+This helps answer:
+
+* is user stationary?
+* is GPS stable?
+* what nearby landmark keeps recurring?
+* what is the likely real entrance/street?
+
+A single pin is weak.
+A short stream gives a **confidence envelope**.
+
+---
+
+## B. Verify nearby landmark from it
+
+Yes. This is crucial.
+
+The system should convert noisy lat/lng into:
+
+* nearest recognizable landmark
+* lane/street/road name
+* building/market/gate/society name if available
+* distance + direction from landmark
+
+Because partners often navigate by:
+
+* “near Hanuman Mandir”
+* “behind XYZ school”
+* “3rd lane after petrol pump”
+
+
+not by formal address strings.
+
+So you want a **landmark-first install descriptor**.
+
+---
+
+## C. Establish that the user is actually at the install location
+
+This is one of the most important checks.
+
+Because sometimes users may:
+
+* book from another place
+* share approximate pin
+* stand outside the exact install point
+* use a saved location
+* be inside a large apartment cluster where the pin is not enough
+
+You need a confidence model like:
+
+* GPS stability score
+* repeated pings from same place
+* whether location is current or stale
+* whether place lies inside plausible installable/residential zone
+* whether user confirms “I am standing at the exact building/street where install is needed”
+
+So yes:
+**“Are you physically at the place where WiFi is to be installed?”**
+should be a formal check, not an assumption.
+
+---
+
+## D. Give final landmark to partner
+
+Correct.
+
+Partner payload should not be:
+
+* raw address only
+
+It should be:
+
+* verified landmark name
+* distance from landmark to user point
+* direction
+* recognized street/lane descriptor
+* serviceability confidence
+* install confidence
+* maybe photo cue
+
+This makes the partner’s job operationally simpler.
+
+---
+
+## E. Take street-view-like photo for partner recognition
+
+This is powerful, with caveats.
+
+If the user uploads a photo of:
+
+* building front
+* lane entrance
+* shop next door
+* gate / pole / visible landmark
+
+that can dramatically reduce search friction.
+
+This is especially useful in:
+
+* dense Indian localities
+* informal lanes
+* weak addressing systems
+* apartment clusters with repeated-looking blocks
+
+The right use is not “photo for exact geo truth” but:
+
+> “visual recognition aid for last-50m navigation”
+
+So yes, this can be a major feature.
+
+Best framing:
+
+* “Share a photo of the building entrance / street outside so the installer can recognize it.”
+
+---
+
+# 2. Partner-side system
+
+This part is especially strong.
+
+## A. Rank text address lowest
+
+Yes.
+
+The partner should not mentally optimize around free-form text first.
+
+Priority order should be more like:
+
+1. Verified serviceable zone / boundary fit
+2. Landmark cue
+3. Historical install density nearby
+4. Current user verified location
+5. Visual cue / street photo
+6. Text address
+
+That is much closer to reality.
+
+Text address is often:
+
+* incomplete
+* noisy
+* misspelled
+* non-standard
+* locally meaningful but not globally parseable
+
+So it should be a supporting signal, not the main one.
+
+---
+
+## B. Give higher precedence to area within serviceable boundary
+
+Exactly.
+
+This is where your Genie thinking is already ahead.
+
+The most important question is not:
+
+* “What did the address say?”
+
+It is:
+
+* “Is this point inside the partner’s real serviceable operating domain?”
+
+That operating domain should be inferred from:
+
+* past installs
+* past declines
+* local density
+* repeated successful movement/install behavior
+* maybe infra constraints
+
+So partner UI should first say:
+
+* **inside serviceable zone**
+* **edge of serviceable zone**
+* **outside known serviceable zone**
+
+This is much better than raw distance alone.
+
+---
+
+## C. Show nearest landmark and distance from it
+
+Yes. This is probably one of the highest ROI changes.
+
+Show:
+
+* landmark name
+* distance from booking point
+* maybe walking/road direction
+* maybe “same lane / opposite lane / behind”
+
+For example:
+
+* Near Aggarwal Sweets, 35m inside left lane
+* Opposite Shiv Mandir, 60m from main road
+* Gate 2 of XYZ Apartments, 20m
+
+That is much more actionable than:
+
+* House no. 14B, Street 7, Phase II extension…
+
+---
+
+## D. If within serviceable domain, first ensure partner reaches nearest landmark
+
+Yes. This is a very good operational decomposition.
+
+Instead of asking partner to solve the whole search problem at once:
+
+Stage 1: Reach landmark
+Stage 2: Last-50m recognition using street cues / user confirmation
+
+This reduces cognitive load.
+
+So your navigation system should be:
+
+* go to nearest landmark
+* then show last-leg guidance
+* then connect to user only if needed
+
+That is much better than making the partner do full discovery manually.
+
+---
+
+## E. If outside serviceable domain, trigger human intervention
+
+Correct.
+
+This is much better than silently broadcasting impossible or low-confidence bookings.
+
+If booking is:
+
+* outside serviceable domain
+* or in ambiguous zone
+* or in conflicting partner territory
+* or far from historical installable area
+
+then route to:
+
+* human review
+* special partner validation
+* customer clarification
+* field verification workflow
+
+This prevents false promise creation.
+
+That aligns very well with your “moral debt” framing around commitment.
+
+---
+
+## F. Constant partner GPS input
+
+Yes, but the most important use is not just live tracking.
+
+It is to learn:
+
+* partner navigation corridors
+* approach routes
+* where they pause
+* where they call
+* where installs actually happen
+* where they repeatedly abandon
+
+This lets you build:
+
+* navigational friction maps
+* true access corridors
+* last-leg movement behavior
+* landmark usefulness scores
+* approachability, not just straight-line serviceability
+
+That is very valuable.
+
+---
+
+# 3. Your modeling ideas are strong
+
+## A. Density of older installs → partner boundaries
+
+Yes. This is foundational.
+
+Older successful installs are not just history.
+They are evidence of:
+
+* feasible infra reach
+* partner comfort zone
+* local recognizability
+* operational reliability
+
+So install density absolutely should shape boundaries.
+
+But ideally not as simple circles.
+Better as:
+
+* density field
+* connected installable clusters
+* corridor-aware polygons
+* confidence bands
+
+Which is already close to your current work.
+
+---
+
+## B. Calls done for address verification
+
+Very important signal.
+
+A call is not just a communication event.
+It is a **friction event**.
+
+Repeated address-verification calls imply:
+
+* location ambiguity
+* landmark insufficiency
+* weak address quality
+* hard-to-recognize area
+* maybe customer not present at exact spot
+
+You should absolutely log:
+
+* whether call happened
+* when it happened
+* before reaching area or after reaching area
+* number of calls
+* duration
+* outcome after call
+
+This is exactly the kind of numeric signal Swiggy was talking about.
+
+---
+
+## C. Successful / failed installs on those calls
+
+Yes.
+
+The key is not merely “call happened”.
+
+The key is:
+
+* did call resolve the ambiguity?
+* did install happen after call?
+* did repeated calls still fail?
+* does this address/zone systematically need calls?
+
+From that you can learn:
+
+* call-resolvable areas
+* structurally ambiguous areas
+* false-positive serviceable areas
+* places that need stronger pre-verification
+
+Very useful.
+
+---
+
+## D. Partner install / non-install signals create serviceable areas
+
+Absolutely.
+
+This is probably the deepest point in your note.
+
+Serviceable area should not be defined mainly by:
+
+* declared radius
+* nearest point distance
+* manual partner claims
+
+It should emerge from:
+
+* repeated install success
+* repeated rejection
+* hesitation
+* time-to-decision
+* field movement behavior
+* escalation need
+
+In other words:
+
+> serviceable area is a behavioral construct, not just a geometric one
+
+That is exactly right.
+
+---
+
+# 4. “When partner gets address information, he shouldn’t need to call”
+
+This is the correct product principle.
+
+Not:
+
+* “calls are fine”
+* “partner can always ask”
+
+But:
+
+> “the system should have already done most of the disambiguation”
+
+A partner call should be:
+
+* rare
+* exception-driven
+* used for final coordination, not basic discovery
+
+If the partner still frequently calls for:
+
+* where are you
+* which lane
+* near what
+* exact building
+
+then your upstream place-representation system is weak.
+
+That is a very good north star metric.
+
+---
+
+# 5. “He should see nearest landmark (google address descriptors)”
+
+Yes, but with one important refinement:
+
+Do not rely only on external map descriptors.
+Use a blended landmark stack:
+
+1. Map/reverse-geocode descriptors
+2. User-confirmed landmark
+3. Historically successful landmark references from past installs nearby
+4. Partner-recognized local anchors
+
+Because in India, what is most useful is often:
+
+* not the official map label
+* but the locally recognized cue
+
+So best output is:
+
+* machine-derived landmark candidate
+* user-confirmed landmark
+* historically effective local cue
+
+---
+
+# 6. The architecture underneath your idea
+
+This can be framed as 4 layers:
+
+## Layer 1: User truth capture
+
+Collect:
+
+* live GPS stream
+* address text
+* landmark confirmation
+* exact install-location confirmation
+* street-view photo
+
+Output:
+
+* verified user-side place packet
+
+## Layer 2: Historical behavioral intelligence
+
+Use:
+
+* install density
+* decline density
+* call frequency
+* call success/failure
+* partner navigation behavior
+* service boundary fit
+
+Output:
+
+* installability / recognizability / confidence scores
+
+## Layer 3: Partner guidance
+
+Show:
+
+* serviceable / edge / outside
+* nearest landmark
+* distance from landmark
+* user photo
+* recommended approach
+* escalation flag if needed
+
+Output:
+
+* low-friction execution
+
+## Layer 4: Learning loop
+
+Record:
+
+* did partner call?
+* did partner reach landmark?
+* time to locate
+* install / decline
+* where final install occurred
+
+Output:
+
+* continuously improving place intelligence
+
+---
+
+# 7. The core signals you should explicitly model
+
+You already named many of them. I would structure them like this.
+
+## User-side verification signals
+
+* GPS stability
+* number of pings
+* radius of uncertainty
+* whether user confirms exact install location
+* landmark confirmation
+* image provided or not
+
+## Historical place-friction signals
+
+* number of prior address-verification calls nearby
+* average calls per install nearby
+* average call duration nearby
+* search time nearby
+* repeat failure rate nearby
+* repeated install success nearby
+
+## Partner-domain signals
+
+* inside partner install cluster or not
+* distance to nearest successful historical install
+* density of installs in local area
+* density of declines in local area
+* install/decline ratio
+* edge-of-boundary score
+
+## Navigation signals
+
+* partner route convergence
+* where partners typically pause
+* whether nearest landmark is on known approach route
+* last-50m ambiguity score
+
+## Outcome signals
+
+* install success
+* decline
+* reassignment
+* human intervention needed
+* call needed vs no call needed
+
+---
+
+# 8. Product principle you can write down
+
+A clean statement for this is:
+
+> The system should not send a partner an address.
+> It should send a verified, behaviorally grounded, partner-recognizable install location.
+
+That is the real shift.
+
+---
+
+# 9. The strongest version of your idea
+
+I’d summarize your design like this:
+
+### User app should produce:
+
+* exact live location stream
+* confirmed landmark
+* confirmation that user is at install site
+* visual street cue
+
+### Genie should infer:
+
+* whether point lies inside a true behaviorally serviceable zone
+* nearest historically useful landmark
+* expected location ambiguity
+* probability that partner will need to call
+
+### Partner app should show:
+
+* serviceability confidence
+* nearest landmark first
+* last-leg visual cue
+* human escalation trigger when outside confidence envelope
+
+---
+
+# 10. One very important metric
+
+You already hinted at it:
+
+> “When partner gets address information, he shouldn’t have to call.”
+
+This should become a formal quality metric:
+
+* **Address Resolution Without Call Rate**
+* **Landmark-Reach Success Rate**
+* **Partner Search Time**
+* **Human Escalation Rate**
+* **Install Success Conditional on No Call**
+
+These are much better system metrics than just raw install rate.
+
+---
+
+# 11. The deepest idea underneath all this
+
+You are moving from **address intelligence** to **place intelligence**.
+
+Address intelligence asks:
+
+* what text did the user provide?
+
+Place intelligence asks:
+
+* where is this really?
+* how do humans recognize it?
+* can this partner serve it?
+* what guidance reduces friction?
+* what did past real-world behavior teach us about this place?
+
+That is the correct frame.
+
+If you want, I can turn your notes into a crisp 1-page product/architecture spec for Genie in your style.
+
+
+

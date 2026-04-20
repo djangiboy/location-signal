@@ -1,0 +1,483 @@
+# Partner <-> Customer Call Transcription Analysis
+Created: 2026-04-19
+Updated: 2026-04-20T15:33
+Cohort: Delhi · Jan-Mar 2026 · non-BDO. Ground-truth complement to ../location_accuracy/ dropdown analysis.
+""
+""
+## 1. Why this exists
+""
+../location_accuracy/ found that the dropdown `decision_reason` = 'address_not_clear' separates 48% -> 2.5% across GNN prob deciles and 9.8% -> 28.5% across distance deciles.
+The dropdown is what partners CLICK when they decline. Two partners declining for different real reasons can click the same option.
+This subfolder replaces `partner clicked X` with `partner actually said X on the call` — via Exotel recording + OpenAI Whisper (Hindi->English in one pass) + Claude Haiku classification + OpenAI embedding cross-check.
+""
+## 1b. Merge quality — who survived the UCCL join
+""
+"Master pair cohort — Jan-Mar 2026 Delhi non-BDO, post-serviceability, first ASSIGNED event per (mobile, partner)."
+stage,unique mobiles,"unique (mobile, partner) pairs"
+All assigned (Jan-Mar Delhi),"6,523","8,584"
++ passed serviceability gate,"6,405","8,444"
++ non-BDO filter (MASTER),"5,225","6,951"
+"INNER JOIN with UCCL recording, call in [assigned, +14d]","2,336","2,991"
+After resolve_call_to_partner (time-proximity ownership),—,"2,561"
+""
+"DROP-OFF 1: master (6,951) -> calls-inner-join (2,991) = 3,960 pairs lost (57%)."
+That 57% is NOT `no calls happened` — it's dominated by UCCL ingestion timing. Broken down:
+""
+sub-bucket,n,"% of 3,960"
+"UCCL row exists, but no recording (Cand #2)","1,024",25.9%
+  only MISSED_CALL rows,536,
+  only CANCELLED / REJECTED rows,551,
+  only UNKNOWN status,316,
+  CONNECTED but no recording,0,
+No UCCL row at all (Cand #1 + #3),"2,936",74.1%
+""
+Finding: CONNECTED ≡ has_recording (zero exceptions). MISSED / CANCELLED / REJECTED / UNKNOWN never carry a recording.
+"The dominant bucket (2,936 pairs, 74% of the no-recording cohort) is pairs with NO UCCL row at all. This is concentrated in Jan-Feb — the UCCL ingestion bed-in period."
+""
+UCCL no-call rate by month (master pairs):
+month,total,with call,no call,% no-call
+Jan 2026,"2,666",725,"1,941",72.8%
+Feb 2026,"2,319",999,"1,320",56.9%
+Mar 2026,"1,867","1,216",651,34.9%
+Apr 2026 (partial),99,51,48,48.5%
+""
+Feb 7-9 had >92% no-call for 3 consecutive days — acute UCCL outage.
+""
+"Install rate by UCCL-activity bucket (6,951 master pairs):"
+bucket,n,installed,install rate
+A. Has recording (in manifest),"2,991","1,320",44.1%
+B. UCCL row but no recording (M/C/R/U),"1,024",278,27.1%
+C. No UCCL row at all,"2,936","1,549",52.8%
+""
+"(A) splits further: after resolve_call_to_partner drops 430 orphans, the 2,561 pairs with actual resolved calls install at 51.4%. The 430 orphans install at 0.7% — confirming they're ghost assignments the resolver correctly excludes."
+""
+"Interpretation: B is the lowest install (27%) — failed call attempts predict failed installs. C is highest (53%) — smooth installs that didn't need phone coordination, plus Jan/Feb UCCL gaps on pairs that installed anyway."
+""
+""
+"## 1c. noise_or_empty (537 pairs) vs Candidate #2 (1,024 pairs) — distinct failures"
+""
+dimension,Candidate #2,noise_or_empty
+n,"1,024",537
+audio existed?,NO,YES — was transcribed
+UCCL call_status,MISSED / CANCELLED / REJECTED / UNKNOWN,CONNECTED
+what happened,Call never connected,"Call connected, zero substantive speech"
+where detected,SQL (no recording_url),Haiku classification of transcript
+pipeline stage,Filtered in pull_calls.py,Tagged in classify_reasons.py
+""
+Both are 'failed communication' at different stages. Candidate #2 = routing/dialing failure. noise_or_empty = conversational failure.
+""
+## 2. Data source
+""
+USER_CONNECTION_CALL_LOGS (PROD_DB.POSTGRES_RDS_PARTNER_CALL_LOG_IVR):
+"  - partner<->customer calls via Exotel, between ASSIGNED and install"
+  - has `recording_url` (needs HTTP Basic auth with Exotel SID+Token)
+  - ~27% of rows have a recording (~= CONNECTED call_status)
+"partner_call_log (same schema) = PTL, partners->Wiom-support. Not the source here."
+""
+UCCL population history (from probe_call_log_dates.py):
+month,row_count,distinct_calls,distinct_from,with_recording,connected,missed,cancelled,rejected,unknown_st,other_status
+2025-12-01,583,583,270,161,161,78,43,24,277,0
+2026-01-01,"7,415","7,415","2,101","1,895",1896,1347,403,652,3117,0
+2026-02-01,"7,653","7,651","1,848","2,113",2113,1216,361,458,3505,0
+2026-03-01,"10,268","10,268","2,116","2,778",2781,1309,435,612,5131,0
+2026-04-01,"6,048","6,048","1,462","1,869",1869,959,429,402,2389,0
+""
+Earliest created_at: 2025-12-30 21:37 (go-live 2025-12-31).
+Implication: Dec 2025 cohort from ../location_accuracy/ could NOT be used (early-Dec calls pre-date UCCL). Cohort shifted to Jan-Mar 2026.
+""
+## 3. Cohort scale
+""
+"Call manifest rows            : 6,199"
+"Unique call_ids (recordings)  : 4,944"
+"Transcribed (unique call_ids) : 4,930"
+"Unique mobiles                : 2,336"
+"Unique (mobile, partner_id)   : 2,991"
+"Pair-level rows (final)       : 2,561"
+"Installed pairs               : 1,317  (51.4%)"
+"Pairs with >1 distinct reason : 1,783  (69.6%)"
+""
+n_calls per pair distribution:
+n_calls,pairs
+1,977
+2,812
+3,286
+4,239
+5,63
+6,103
+7,7
+8,29
+9,11
+10,14
+12,8
+14,2
+15,1
+16,2
+17,1
+18,1
+20,1
+21,2
+22,1
+24,1
+""
+## 4. Reason taxonomy (20 first-principles labels)
+""
+Decomposed from first principles: the call sits between ASSIGNED and OTP_VERIFIED; JTBD = resolve everything needed for a physical install.
+category,labels
+Location resolution,"address_not_clear, address_too_far, address_wrong, building_access_issue"
+Scheduling,"customer_postpone, partner_postpone, slot_confirmation"
+Post-visit recovery,"partner_reached_cant_find, partner_no_show"
+Customer decision,"customer_cancelling, competitor_or_consent"
+Commercial,"price_or_plan_query, payment_issue"
+Technical / site,"install_site_technical, router_or_stock_issue, duplicate_or_existing_connection"
+Communication / fallback,"wrong_customer, customer_unreachable, noise_or_empty, other"
+""
+Full definitions + disambiguation + few-shot examples: classify_reasons.py :: SYSTEM_PROMPT (V2).
+""
+## 5. Primary reason distribution (pair-level)
+""
+primary_first,count,pct
+address_not_clear,927,36.2
+noise_or_empty,537,21.0
+slot_confirmation,255,10.0
+customer_postpone,140,5.5
+customer_unreachable,130,5.1
+partner_reached_cant_find,114,4.5
+wrong_customer,98,3.8
+customer_cancelling,85,3.3
+price_or_plan_query,58,2.3
+duplicate_or_existing_connection,41,1.6
+partner_postpone,35,1.4
+address_too_far,30,1.2
+partner_no_show,30,1.2
+install_site_technical,26,1.0
+payment_issue,20,0.8
+address_wrong,11,0.4
+competitor_or_consent,9,0.4
+building_access_issue,7,0.3
+router_or_stock_issue,5,0.2
+other,3,0.1
+""
+## 5b. Pair-level install rate by primary_first reason
+""
+"For each reason (as first in sorted union across the pair's calls), how many pairs installed vs didn't. This is the surmountable-vs-terminal gradient."
+""
+primary_first,pairs,share_of_cohort_%,installed,not_installed,install_rate_%
+address_not_clear,927,36.2,547,380,59.0
+noise_or_empty,537,21.0,271,266,50.5
+slot_confirmation,255,10.0,165,90,64.7
+customer_postpone,140,5.5,67,73,47.9
+customer_unreachable,130,5.1,57,73,43.8
+partner_reached_cant_find,114,4.5,81,33,71.1
+wrong_customer,98,3.8,31,67,31.6
+customer_cancelling,85,3.3,2,83,2.4
+price_or_plan_query,58,2.3,17,41,29.3
+duplicate_or_existing_connection,41,1.6,12,29,29.3
+partner_postpone,35,1.4,15,20,42.9
+address_too_far,30,1.2,5,25,16.7
+partner_no_show,30,1.2,9,21,30.0
+install_site_technical,26,1.0,19,7,73.1
+payment_issue,20,0.8,7,13,35.0
+address_wrong,11,0.4,4,7,36.4
+competitor_or_consent,9,0.4,2,7,22.2
+building_access_issue,7,0.3,5,2,71.4
+router_or_stock_issue,5,0.2,1,4,20.0
+other,3,0.1,0,3,0.0
+""
+"TOTAL: 2,561 pairs, 1,317 installed (51.4%), 1,244 not installed."
+""
+Surmountable-vs-terminal read: install_site_technical 73% / partner_reached_cant_find 71% / building_access_issue 71% / slot_confirmation 65% / address_not_clear 59% (all surmountable). customer_cancelling 2% / address_too_far 17% / router_or_stock 20% / competitor_or_consent 22% (all terminal).
+""
+## 6. Call-level reason % by DISTANCE decile
+""
+Each call's primary_reason. Decile ranked over full 20K Jan-Mar non-BDO allocation cohort.
+distance_decile,address_not_clear,address_too_far,address_wrong,building_access_issue,competitor_or_consent,customer_cancelling,customer_postpone,customer_unreachable,duplicate_or_existing_connection,install_site_technical,noise_or_empty,other,partner_no_show,partner_postpone,partner_reached_cant_find,payment_issue,price_or_plan_query,router_or_stock_issue,slot_confirmation,wrong_customer,_total
+1,19.70,0.30,0.40,0.30,0.60,1.90,2.80,8.70,0.60,1.40,23.70,0.10,1.20,0.80,10.30,1.20,1.90,0.70,18.30,5.20,727
+2,18.00,0.10,0.40,0.30,0.40,3.40,3.80,5.10,0.80,0.50,25.10,0.30,1.10,1.60,8.70,2.90,3.60,1.00,14.90,7.90,732
+3,20.10,1.10,0.30,0.10,0.40,2.10,5.10,3.90,1.00,1.00,23.10,0.10,2.30,1.10,10.00,0.90,3.30,0.30,17.60,6.20,791
+4,20.60,0.40,0.10,0.00,0.10,4.50,3.90,5.80,0.60,0.80,27.40,0.10,1.10,1.10,9.40,0.70,3.40,0.00,14.20,5.50,709
+5,19.90,1.70,0.10,0.10,0.40,2.20,4.60,5.60,2.30,1.30,26.60,0.00,0.60,1.00,10.80,1.30,2.50,0.60,13.40,4.90,693
+6,21.40,1.70,0.20,0.00,0.00,3.70,5.70,3.80,0.90,0.60,21.30,0.60,2.10,2.10,8.00,0.80,2.90,0.00,16.40,8.00,654
+7,20.60,0.00,0.20,0.00,0.20,3.30,3.90,3.70,2.40,0.20,22.00,0.00,2.20,2.40,9.80,0.60,3.10,0.00,17.00,8.30,540
+8,24.30,1.10,0.20,0.00,0.20,3.10,4.80,7.10,1.30,1.00,24.50,0.20,1.70,1.50,9.60,0.60,2.70,0.00,11.70,4.40,522
+9,23.10,1.00,0.30,0.00,0.00,3.00,4.20,5.10,1.20,0.50,24.10,0.00,2.10,1.90,10.10,0.50,1.60,0.00,14.90,6.30,572
+10,20.30,4.20,0.40,0.40,0.00,3.80,3.00,9.30,3.00,0.40,27.00,0.40,1.70,0.00,5.10,0.40,1.70,0.00,14.30,4.60,237
+,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,40.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,20.00,40.00,5
+""
+## 7. Call-level reason % by PROBABILITY decile
+""
+prob_decile,address_not_clear,address_too_far,address_wrong,building_access_issue,competitor_or_consent,customer_cancelling,customer_postpone,customer_unreachable,duplicate_or_existing_connection,install_site_technical,noise_or_empty,other,partner_no_show,partner_postpone,partner_reached_cant_find,payment_issue,price_or_plan_query,router_or_stock_issue,slot_confirmation,wrong_customer,_total
+1.0,17.90,2.00,0.00,0.00,0.00,6.00,6.00,4.00,0.00,0.00,23.20,0.00,2.00,4.60,7.30,2.00,0.00,0.00,14.60,10.60,151
+2.0,18.20,1.80,0.70,0.00,0.00,3.60,4.30,6.40,1.40,1.40,27.90,0.70,1.10,1.10,7.50,0.70,0.70,0.00,14.30,8.20,280
+3.0,23.20,0.30,0.20,0.20,0.50,1.40,2.70,5.30,1.50,0.90,21.80,0.00,1.70,0.70,12.50,1.90,2.40,0.90,14.20,7.80,586
+4.0,24.20,0.60,0.40,0.20,0.20,2.10,4.20,4.00,1.50,0.40,25.30,0.40,1.30,1.30,7.20,1.50,3.00,0.00,17.00,5.30,529
+5.0,19.60,1.30,0.40,0.10,0.00,2.50,3.70,11.00,0.90,0.70,25.70,0.00,1.60,1.20,10.10,0.10,2.80,0.00,13.80,4.30,674
+6.0,20.40,1.30,0.10,0.00,0.00,4.30,3.00,7.20,0.80,0.60,27.00,0.00,1.90,1.00,7.80,0.90,3.10,0.10,12.50,7.80,773
+7.0,19.60,1.50,0.00,0.10,0.10,3.80,4.70,4.30,1.00,0.90,25.20,0.00,1.60,1.30,9.00,1.60,4.40,0.10,13.10,7.40,678
+8.0,21.60,0.90,0.30,0.20,0.80,4.20,5.20,4.00,2.40,0.70,22.80,0.20,1.30,1.60,9.40,1.00,3.00,0.30,14.30,5.60,921
+9.0,18.70,0.20,0.20,0.00,0.20,2.90,5.00,3.90,0.60,0.80,22.90,0.30,1.40,2.10,10.50,1.00,3.50,0.70,20.40,4.70,868
+10.0,20.90,1.30,0.30,0.20,0.30,1.30,4.80,5.00,1.60,1.10,22.50,0.20,1.90,1.30,11.00,0.60,1.10,0.30,19.20,5.10,626
+,19.80,0.00,0.00,0.00,0.00,1.00,2.10,7.30,1.00,4.20,30.20,1.00,2.10,1.00,6.20,1.00,0.00,0.00,12.50,10.40,96
+""
+## 8. Call-level reason % by nearest_type (active_base vs splitter)
+""
+nearest_type,address_not_clear,address_too_far,address_wrong,building_access_issue,competitor_or_consent,customer_cancelling,customer_postpone,customer_unreachable,duplicate_or_existing_connection,install_site_technical,noise_or_empty,other,partner_no_show,partner_postpone,partner_reached_cant_find,payment_issue,price_or_plan_query,router_or_stock_issue,slot_confirmation,wrong_customer,_total
+active_base,19.70,0.90,0.30,0.10,0.10,3.00,4.20,5.70,1.30,0.70,25.30,0.20,1.60,1.60,9.20,1.10,2.70,0.30,15.40,6.60,"4,731"
+splitter,23.90,1.20,0.20,0.10,0.60,3.20,4.40,5.00,1.20,1.10,21.40,0.10,1.40,0.80,10.40,0.90,2.80,0.30,15.60,5.10,"1,446"
+,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,40.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,20.00,40.00,5
+""
+## 9. Pair-level reason touch-rate by DISTANCE decile
+""
+% of pairs that touched the reason on AT LEAST ONE call.
+Note: saturated metric — pairs with more calls have higher touch rates by construction. Compare with call-level above for a cleaner signal.
+distance_decile,address_not_clear,address_too_far,address_wrong,building_access_issue,competitor_or_consent,customer_cancelling,customer_postpone,customer_unreachable,duplicate_or_existing_connection,install_site_technical,noise_or_empty,other,partner_no_show,partner_postpone,partner_reached_cant_find,payment_issue,price_or_plan_query,router_or_stock_issue,slot_confirmation,wrong_customer,_n_pairs
+1,44.40,0.90,1.50,0.60,0.60,4.30,9.00,14.20,2.20,4.30,35.20,0.30,2.20,5.90,20.70,5.60,6.50,1.20,49.40,9.90,324
+2,40.10,0.30,1.50,1.80,0.60,4.40,9.70,8.00,3.20,5.60,36.60,0.60,2.70,5.00,18.30,8.80,10.30,2.10,44.20,15.00,339
+3,45.00,2.20,1.30,0.60,0.90,4.40,14.20,8.50,2.50,5.70,37.40,0.30,2.80,4.40,21.70,6.00,14.20,0.30,51.30,11.60,318
+4,45.50,1.00,1.00,1.00,1.00,6.60,11.40,7.90,2.10,6.90,39.70,0.30,3.80,4.80,24.10,6.60,8.60,0.30,47.60,10.70,290
+5,45.60,3.30,1.10,1.50,1.10,4.40,17.50,11.70,3.60,5.10,36.90,0.00,1.10,4.70,23.70,6.20,7.70,1.50,43.10,10.60,274
+6,45.70,2.30,0.80,0.80,0.00,6.20,18.60,7.80,2.30,3.10,33.70,1.20,5.40,7.00,18.20,8.10,8.50,0.40,48.80,13.60,258
+7,44.50,0.80,1.30,0.80,0.40,4.60,11.30,8.40,3.80,3.40,31.50,0.00,2.90,5.90,17.60,3.40,7.10,0.80,48.70,14.70,238
+8,52.60,2.60,0.50,0.00,0.50,5.10,14.80,9.70,2.00,5.60,40.30,0.50,5.60,7.10,25.00,6.10,9.20,0.50,48.00,12.20,196
+9,45.10,1.90,0.90,1.40,0.00,4.70,14.90,11.60,2.80,3.70,38.60,0.00,4.70,5.10,21.90,5.10,7.90,0.90,47.00,13.00,215
+10,41.10,5.60,1.90,0.90,0.00,7.50,13.10,7.50,4.70,5.60,36.40,0.90,5.60,2.80,11.20,6.50,3.70,0.00,38.30,9.30,107
+""
+## 10. Pair-level reason touch-rate by PROBABILITY decile
+""
+prob_decile,address_not_clear,address_too_far,address_wrong,building_access_issue,competitor_or_consent,customer_cancelling,customer_postpone,customer_unreachable,duplicate_or_existing_connection,install_site_technical,noise_or_empty,other,partner_no_show,partner_postpone,partner_reached_cant_find,payment_issue,price_or_plan_query,router_or_stock_issue,slot_confirmation,wrong_customer,_n_pairs
+1.0,42.40,5.10,0.00,0.00,0.00,8.50,16.90,11.90,1.70,11.90,40.70,0.00,8.50,8.50,18.60,8.50,3.40,0.00,37.30,13.60,59
+2.0,43.50,3.50,2.60,0.90,0.00,5.20,8.70,13.00,4.30,3.50,37.40,1.70,5.20,3.50,17.40,3.50,6.10,0.00,43.50,17.40,115
+3.0,50.20,1.00,0.50,1.40,0.50,3.90,11.60,12.60,3.40,4.80,39.10,0.00,3.40,3.90,23.70,7.70,11.10,1.40,48.80,16.90,207
+4.0,51.80,1.40,1.40,0.90,0.90,3.70,12.80,10.60,2.30,5.50,37.60,0.50,4.60,6.40,17.40,5.00,9.60,0.90,49.50,11.50,218
+5.0,42.20,1.90,1.50,2.30,0.40,5.30,10.30,9.90,2.30,4.90,34.60,0.00,3.80,4.90,22.10,3.40,7.60,0.80,50.20,9.50,263
+6.0,45.60,2.10,1.20,0.30,0.00,5.40,12.40,11.20,1.50,4.50,40.80,0.00,3.30,3.60,19.00,6.00,8.50,0.60,43.80,13.30,331
+7.0,41.30,1.50,0.40,1.10,0.80,6.40,15.90,8.30,3.40,3.40,39.00,0.00,2.30,7.60,20.80,9.80,12.90,0.80,45.50,15.50,264
+8.0,45.20,1.30,1.60,1.10,1.10,6.40,13.60,8.60,4.00,3.70,34.20,0.50,2.40,5.90,22.20,7.50,10.40,1.10,46.00,12.60,374
+9.0,43.70,1.10,1.30,0.80,0.80,4.60,13.40,8.00,2.70,6.70,35.10,0.80,2.70,5.60,21.70,8.30,9.70,1.60,52.30,9.40,373
+10.0,44.70,3.00,1.00,0.70,0.70,3.30,16.10,7.90,2.60,4.60,31.60,0.30,3.60,5.60,22.00,3.30,3.90,0.70,46.70,8.20,304
+""
+## 11. Decision -> install time gap (installed pairs)
+""
+statistic,hours
+count,"1,317.0"
+mean,27.8
+std,67.0
+min,0.3
+10%,2.8
+25%,5.6
+50%,20.8
+75%,28.4
+90%,49.6
+95%,70.5
+99%,182.1
+max,"1,388.6"
+""
+Bucketed:
+bucket,count,pct
+<1h,6,0.5
+1-6h,348,26.4
+6-24h,450,34.2
+1-2d,367,27.9
+2-3d,84,6.4
+3-7d,47,3.6
+>7d,15,1.1
+""
+Median gap (hours) by primary_first reason — installed pairs only:
+primary_first,median,mean,count
+address_not_clear,18.8,26.1,547
+noise_or_empty,21.4,32.9,271
+slot_confirmation,19.8,22.8,165
+partner_reached_cant_find,19.1,29.1,81
+customer_postpone,25.1,28.6,67
+customer_unreachable,21.9,34.3,57
+wrong_customer,22.6,29.3,31
+install_site_technical,20.3,22.0,19
+price_or_plan_query,5.0,11.2,17
+partner_postpone,30.7,29.5,15
+duplicate_or_existing_connection,5.0,23.2,12
+partner_no_show,30.0,35.2,9
+payment_issue,28.6,31.4,7
+address_too_far,5.6,17.6,5
+building_access_issue,24.7,21.1,5
+""
+## 12. Transcript vs dropdown — the headline finding
+""
+metric,dropdown (../location_accuracy),transcript (here)
+address_not_clear base rate,~13%,~20% of calls / 36% of pairs (primary_first)
+spread by distance decile,9.8% -> 28.5% (monotonic up),"19.5% -> 20.1% (flat, 6.5pp range)"
+spread by prob decile,47.7% -> 2.5% (monotonic down),"16.2% -> 21.7% (flat, 7.1pp range)"
+splitter excess friction,splitter install gap,splitter +4pp on address_not_clear
+""
+Interpretation:
+1. Dropdown UNDER-COUNTS address friction by ~2x. ~20% of actual calls involve address friction vs ~13% dropdown rate.
+"2. Distance doesn't separate address friction on actual calls. Pervasive communication pattern, not a geometric phenomenon."
+3. The dropdown's 48%->2.5% prob pattern is a DECLINE-CHANNEL ARTIFACT. Low-prob partners face similar per-call friction but disproportionately CHOSE 'address not clear' as their dropdown exit. Geoff's 'dismissal channel' framing is now EMPIRICALLY CONFIRMED.
+4. Splitters face +4pp more address friction per call. Real signal.
+""
+## 12b. Why-chain: why do address_not_clear calls happen?
+""
+"Headline: address_not_clear is the SINGLE largest reason bucket (37.4% of pair-level primary_first), and the single largest reason in the non-install population (30.5%). So 'why does address_not_clear fail' is the pivotal root cause."
+""
+Why 1: Why do installs fail?
+non-install reason,n,% of non-installs
+address_not_clear,380,30.5%
+noise_or_empty,266,21.4%
+slot_confirmation,90,7.2%
+customer_cancelling,83,6.7%
+customer_unreachable,73,5.9%
+customer_postpone,73,5.9%
+wrong_customer,67,5.4%
+(13 others),212,17.0%
+""
+"Why 2: address_not_clear wins the non-install distribution. WHY does it happen? Tagged communication-quality on the 1,023 unique address_not_clear transcripts via a focused Haiku pass (flag_comm_failure.py):"
+""
+comm_quality,n,%,install rate
+"one_sided_confusion (partner confused, customer clear)",471,46.0%,54.6%
+mutual_failure (both struggle),322,31.5%,48.4%
+clear (partner resolved on second try),209,20.4%,62.2%
+not_applicable,21,2.1%,—
+""
+"Why 3: Which is the dominant sub-type? 46% of address_not_clear is ONE-SIDED — customer gave landmarks clearly, partner couldn't parse or locate. Only 32% is genuinely mutual breakdown."
+""
+Why 4: Why does the partner fail to parse a clearly-given address? Hypothesis anchors:
+  (a) Partner territorial unfamiliarity. SPLITTER partners have +4pp more address_not_clear per call than active_base (23.8% vs 19.9%). Splitter = no prior install in the area -> fewer internal landmarks mapped in partner's head.
+  (b) Phone/audio quality. Whisper translation artifacts inflate some cases; real audio noise in others.
+  (c) Hindi dialect and landmark-language mismatches between customer and partner.
+""
+Why 5: What breaks mutual cases apart from one-sided? Cross with partner_reached_cant_find — which is ON-GROUND navigation (partner actually at/near the location):
+""
+among partner_reached_cant_find (n=496),n,%
+mutual_failure,203,40.9%
+one_sided_confusion,116,23.4%
+clear,96,19.4%
+not_applicable,81,16.3%
+""
+"Mutual-failure rate is 41% for on-ground navigation calls vs 32% for pre-dispatch address calls. When the partner is standing outside and customer is directing by phone, the two-agent negotiation becomes harder — this is where mutual failure peaks."
+""
+So 'address failure' decomposes to:
+"  - 46% of it: partner-side parsing difficulty (pre-dispatch) — fixable with better address capture upstream (location share, pin drop, Places API at booking time)"
+"  - 32% of it: genuine mutual breakdown — fixable with structured navigation flow (in-call pin share, building-level address hierarchy)"
+  - 22% of it: actually resolved within the call — not a failure
+""
+"Implication: the dominant lever is NOT customer training. It's pre-dispatch address-capture quality. Splitter partners, by virtue of covering unfamiliar territory, bear disproportionate cost."
+""
+## 12c. Pair-level comm_quality (worst observed across all calls)
+""
+"For pairs with multiple calls, we collect every call's comm_quality and take the pessimistic rollup (mutual > one_sided > clear > NA). Answers: did the partner-customer pair EVER have mutual breakdown?"
+""
+comm_quality_worst,n,"% of 2,561 pairs"
+mutual_failure,"1,028",40.1%
+one_sided_confusion,845,33.0%
+clear,414,16.2%
+not_applicable,274,10.7%
+""
+40% of pairs had at least one mutual-breakdown call. Higher than the call-level 26% because multi-call pairs accumulate exposure.
+""
+""
+## 12d. Address-chain drill-down (LANDMARK -> GALI -> FLOOR)
+""
+"Second-pass classifier (flag_address_chain.py) re-reads every transcript and tags it against the canonical Delhi address-resolution hierarchy: first converge on a mutually-recognized LANDMARK, then the GALI / lane, then the FLOOR inside the building. Calls can skip levels, enter mid-chain, or fail to engage."
+""
+"Columns added (call-level): addr_landmark_step, addr_gali_step, addr_floor_step, addr_chain_stuck_at, addr_chain_evidence."
+"Pair-level rollups: addr_landmark_best, addr_gali_best, addr_floor_best (furthest-along — optimistic), addr_chain_stuck_at_list, addr_chain_stuck_at_mode."
+""
+"Call-level stuck_at distribution (4,930 unique calls):"
+addr_chain_stuck_at,n,% of calls
+na (not an address-chain call),"3,727",75.6%
+landmark (couldn't agree on anchor),430,8.7%
+gali (lane could not be resolved),364,7.4%
+none (chain resolved / non-address end),350,7.1%
+floor,59,1.2%
+""
+"Call-level bottleneck: GALI (7.4%) edges LANDMARK (8.7% is more calls but landmark-stuck is often followed by re-attempt; gali-stuck tends to be terminal within the call). Only 1.2% of calls fail at floor — once gali lands, floor resolves."
+""
+"Pair-level addr_chain_stuck_at_mode x install rate (2,561 pairs):"
+addr_chain_stuck_at_mode,pairs,share_%,installed,install_rate_%
+na,"1,915",74.8%,948,49.5%
+landmark,239,9.3%,136,56.9%
+gali,232,9.1%,124,53.4%
+none,129,5.0%,75,58.1%
+floor,46,1.8%,34,73.9%
+""
+"COUNTER-INTUITIVE: every chain-engaged bucket installs BETTER than `na` (49.5%). Engaging the chain at all is protective — +7pp at landmark, +4pp at gali, +9pp if resolved, +24pp at floor (because by the time you're arguing about floor, the partner is already at the door)."
+""
+any_chain_engaged (at least one call with stuck_at in landmark/gali/floor/none):
+cohort,any_chain_engaged,pairs,install_rate_%
+"All 2,561",no,"1,627",47.8%
+"All 2,561",yes,934,57.7%
+Within 927 ANC,no,385,58.7%
+Within 927 ANC,yes,542,59.2%
+""
+"Across full cohort: chain-engaged pairs install +10pp better (57.7% vs 47.8%). Within ANC, chain engagement barely matters (+0.5pp) — ANC pairs install ~59% regardless. The chain signal adds PREDICTIVE POWER outside the ANC bucket — i.e. for pairs not flagged as address-friction by primary_first, actually engaging the chain still correlates with install."
+""
+"CROSSTAB: primary_first x addr_chain_stuck_at_mode (2,561 pairs)"
+primary_first,na,landmark,gali,floor,none,TOTAL
+address_not_clear,538,129,169,26,65,927
+noise_or_empty,493,24,10,5,5,537
+slot_confirmation,183,23,15,4,30,255
+customer_postpone,123,8,7,0,2,140
+customer_unreachable,122,3,4,1,0,130
+partner_reached_cant_find,69,21,11,3,10,114
+wrong_customer,83,8,3,1,3,98
+customer_cancelling,81,3,1,0,0,85
+price_or_plan_query,47,6,0,1,4,58
+duplicate_or_existing_connection,33,3,2,1,2,41
+partner_postpone,26,3,3,0,3,35
+address_too_far,23,6,1,0,0,30
+partner_no_show,24,1,3,1,1,30
+install_site_technical,23,0,1,2,0,26
+payment_issue,19,1,0,0,0,20
+address_wrong,6,0,1,1,3,11
+competitor_or_consent,8,0,1,0,0,9
+building_access_issue,7,0,0,0,0,7
+router_or_stock_issue,5,0,0,0,0,5
+other,2,0,0,0,1,3
+TOTAL,"1,915",239,232,46,129,"2,561"
+""
+"Row totals tie to primary_first distribution (section 5). Column totals tie to addr_chain_stuck_at_mode distribution above. Note: 538 of 927 ANC pairs have mode=na — not a contradiction. Mode is pessimistic to noise: an ANC pair with 3 calls (1 address + 2 noise) has mode=na. Use any_chain_engaged (list-based) for chain-engagement presence, mode for dominant theme."
+""
+Within 927 ANC — furthest step reached across the pair's calls:
+step,na,one_tried,multiple_tried,converged,not_reached,attempted,na_ground
+addr_landmark_best,386,189,163,145,44,—,—
+addr_gali_best,383,—,—,173,183,188,—
+addr_floor_best,397,—,—,55,379,58,38
+""
+"Of 927 ANC pairs: 145 (16%) CONVERGED on a landmark somewhere in their calls, 173 (19%) got the gali confirmed, only 55 (6%) resolved the floor. ~383 (41%) never even engaged the gali step — their address chain broke at or before landmark."
+""
+Key reads:
+  (i) Gali is the single largest call-level bottleneck (7.4% of all calls stuck there). Pre-dispatch address capture that gives the partner the gali directly should be highest-leverage.
+  (ii) Floor-stuck pairs install at 74% — the chain is working; residual friction at floor level is surmountable and mostly resolves same visit.
+  (iii) The 40% of ANC pairs that never engaged the gali step have a different failure mode than the ones that did — probably customer disengagement or partner never asking. Worth splitting as a separate pattern.
+""
+""
+## 13. Classifier V1 -> V2 (audit trail)
+""
+V1 over-used noise_or_empty (30% of calls). Embeddings rescued 34% of that bucket into real reasons.
+V2 tightened SYSTEM_PROMPT:
+  - Explicit rule: any intelligible content -> classify by content.
+  - Dialect note: 'bom/vyom/router/ruter' = Wiom Net box (not location).
+  - Few-shot examples from real pilot transcripts.
+V2 fixed embedding `competitor_or_consent` prototype (was drifting on 'my husband/wife' family-timing language).
+Result: Haiku <-> embedding agreement 29% -> 47% (+18pp).
+V1 outputs archived as investigative/*_v1.csv for audit.
+""
+## 14. File map
+""
+SQL queries:
+  query_pcalls.txt       — call manifest (Jan-Mar Delhi non-BDO)
+  query_allocation.txt   — full allocation cohort for decile computation
+""
+Python pipeline (in order):
+  1. pull_calls.py          -> calls_manifest.csv
+"  2. transcribe_calls.py    -> transcripts.csv  (Exotel + Whisper, 10 workers)"
+  3. classify_reasons.py    -> transcripts_classified.csv  (Haiku + regex)
+  4. embedding_classify.py  -> embedding_reason_scores.csv + embedding_vs_haiku.csv
+  5. aggregate_per_pair.py  -> calls_resolved.csv + pair_aggregated.csv
+  6. merge_with_allocation  -> calls_with_alloc.csv + pairs_with_alloc.csv + decile CSVs
+""
+Chain script: run_downstream.sh (steps 3-6)
+""
+"Utilities: show_samples_by_reason.py, smoke_test_one.py, probe_call_log_dates.py"
+""
+Key deliverable tables:
+"  pairs_with_alloc.csv     -- 1 row per (mobile, partner), 18 cols, includes raw transcripts, reasons_union, decision_to_install_hours, distance/prob deciles, nearest_type."
+  calls_with_alloc.csv     -- 1 row per call (finer granularity).

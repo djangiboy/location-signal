@@ -1,0 +1,428 @@
+GENIE LOCATION ACCURACY  --  FULL STORY
+Last run: 2026-04-19 13:57:32
+"Cohort: Delhi, Dec 2025. Non-BDO filter applied."
+Status: Analysis complete. Final answers in sections 11-14.
+
+OPERATIONAL CONTEXT (anchor for new readers):
+  Allocation runs BEFORE partner decisions. It ranks candidate partners by install
+  likelihood; the top-ranked partner is notified first. Production comparison of
+  signals is therefore UNCONDITIONAL -- the state a new booking arrives in.
+"  The 'conditional-accept' slice we compute in section 9 is a DIAGNOSTIC only,"
+  not an operational comparison. Details in section 14.
+
+## 1. THE QUESTION
+
+"Does the partner-to-booking distance at allocation predict installation outcomes,"
+and which decline reasons cluster where?
+
+SCOPE: this is a post-Promise-Maker analysis. Every row already passed the 25m
+serviceability gate (booking_location CTE filters to serviceable = TRUE). We are
+evaluating ALLOCATION (GNN ranking of partners for a booking) -- NOT Promise Maker.
+A separate lead-level Promise Maker analysis will follow.
+
+Why it matters: Allocation keys on nearest_distance to rank partners. If the signal
+is confounded with partner tenure (splitter vs active_base) or with decline-reason
+"gaming (area -> address_not_clear substitution), every ranking inherits the bias."
+
+## 2. COHORT & FILTERS
+
+"Source: Delhi, Dec 2025 bookings. Query: query_unified_correl.txt."
+"Grain: one row per (mobile, partner_id) pair. rn=1 on first decision (ORDER BY added_time ASC)."
+
+"Decision events considered: INTERESTED, ASSIGNED, DECLINED."
+Exclusion: DECLINED with source='System_Force_Declined_Post_Assigned_72hours' (system auto-decline).
+
+Python-side filter: bdo_lead == 0 (non-BDO bookings only).
+Rationale: BDO bookings are ops-captured -- different journey from self-serve.
+
+Counts:
+raw cohort,27303
+after non-BDO filter,11870
+
+Decision event mix (non-BDO):
+event,count,pct
+INTERESTED,7674,64.7%
+DECLINED,4195,35.3%
+ASSIGNED,1,0.0%
+
+## 3. METRICS GLOSSARY
+
+Helper text: what each ratio/field means.
+
+term,definition
+total_obs,"(mobile, partner_id) pairs with a decision in scope"
+pct_installed,same-partner OTP_VERIFIED after allocation / total_obs
+pct_area_decline,DECLINED rows whose reason matches AREA regex / total_obs
+pct_address_not_clear,DECLINED rows whose reason matches ADDRESS regex / total_obs
+separation,max(metric) - min(metric) across deciles. Headline signal for each slice.
+nearest_distance,km from partner's nearest active_base OR splitter to booking lat/lng
+nearest_type,'active_base' (from prior install) or 'splitter' (onboarding proxy)
+probability,"GNN-predicted install probability for this (partner, booking) match"
+area regex,"feasibility + spelling variants, coverage/zone/outside, serviceability, network/signal, line/wire/cable/fiber, range/reach, Hindi distance words (dur/door/daira), infra (rfs/pole/jb/olt), 'meters or more away' dropdown"
+address regex,'understand the address' (English dropdown) | 'पता समझ' (Hindi sibling)
+BDO lead,ops-captured booking -- excluded here to focus on self-serve journey
+
+## 4. ANALYSIS TIMELINE
+
+Chronological steps we took to get here.
+
+step,what we did
+1,Distance deciles on install cohort (INTERESTED/ASSIGNED). Install rate: 72.5% -> 22.6%. Distance matters.
+2,Distance deciles on decline cohort. Excluded System_Force_Declined_Post_Assigned_72hours. Built regex for area-related declines.
+3,"Sampled 'meters or more away' (2236 rows) and 'Couldn't understand the address' (4962 rows) -- both confirmed system dropdowns, not free-text. Split address-unclear into its own metric."
+4,Unified cohort: INTERESTED + ASSIGNED + DECLINED-non-72h in one table. Switched denominator from total_declines to total_obs (Geoff's Leak B fix).
+5,"Non-BDO filter applied. Cohort dropped 27,303 -> 11,870 (56%)."
+6,Added GNN probability + nearest_type (active_base vs splitter) to the allocation CTE.
+7,Probability decile table: install separation 56.77% -- stronger than raw distance (43.81%).
+8,"Nearest_type groupby: splitter underperforms active_base by ~15pp on install, +6-8pp on each decline bucket."
+9,"Prob decile × nearest_type cross-table: GNN partially absorbs splitter signal (composition monotonic 38% -> 12%), but residual 10-17pp mid-decile penalty remains."
+
+## 5. INSTALL / DECLINES BY DISTANCE DECILE (non-BDO)
+
+"Bucket: pd.qcut on nearest_distance. Decile 1 = nearest, decile 10 = farthest."
+Denominator: total_obs (all non-BDO allocations with a decision).
+
+decile,total_obs,n_installed,n_area_decline,n_address_not_clear,d_min,d_max,d_median,pct_installed,pct_area_decline,pct_address_not_clear
+1,"1,189",600,76,116,0.000,4.390,2.090,50.46%,6.39%,9.76%
+2,"1,188",555,89,108,4.400,8.260,6.520,46.72%,7.49%,9.09%
+3,"1,188",537,103,127,8.270,12.070,10.240,45.20%,8.67%,10.69%
+4,"1,184",506,92,146,12.090,15.920,14.010,42.74%,7.77%,12.33%
+5,"1,187",440,105,166,15.930,20.240,17.970,37.07%,8.85%,13.98%
+6,"1,188",365,121,199,20.250,25.200,22.640,30.72%,10.19%,16.75%
+7,"1,185",343,157,205,25.210,34.860,29.470,28.95%,13.25%,17.30%
+8,"1,187",269,178,238,34.870,49.360,41.470,22.66%,15.00%,20.05%
+9,"1,187",152,197,305,49.370,73.130,60.200,12.81%,16.60%,25.70%
+10,"1,187",79,309,338,73.140,448.220,88.060,6.66%,26.03%,28.48%
+
+"Separations (D1 - D10 spread, our headline signal):"
+metric,separation
+pct_installed,43.81%
+pct_area_decline,19.64%
+pct_address_not_clear,19.38%
+
+Read: install rate drops ~50% -> ~7%. Monotonic decay.
+"Both decline buckets rise monotonically. Area ~6% -> ~26%, address ~10% -> ~29%."
+Decile 10 d_max is a long tail -- likely data hygiene (partner lat/lng errors).
+
+## 6. INSTALL / DECLINES BY PROBABILITY DECILE (non-BDO)
+
+"Bucket: pd.qcut on GNN probability. Decile 1 = lowest predicted prob, decile 10 = highest."
+"probability NULL in ~7% of rows -- these drop from this slice but stay in slices 5, 7."
+
+prob_decile,total_obs,n_installed,n_area_decline,n_address_not_clear,p_min,p_max,p_median,d_median,pct_installed,pct_area_decline,pct_address_not_clear
+1,"1,101",41,284,525,0.0000,0.0182,0.0072,42.81,3.72%,25.79%,47.68%
+2,"1,101",67,253,372,0.0183,0.0678,0.0384,37.87,6.09%,22.98%,33.79%
+3,"1,101",149,234,287,0.0681,0.1664,0.1131,30.44,13.53%,21.25%,26.07%
+4,"1,100",262,162,192,0.1664,0.3143,0.2348,24.23,23.82%,14.73%,17.45%
+5,"1,101",328,118,116,0.3143,0.4869,0.3989,22.05,29.79%,10.72%,10.54%
+6,"1,101",412,77,91,0.4870,0.6621,0.5743,19.58,37.42%,6.99%,8.27%
+7,"1,100",473,73,67,0.6622,0.8077,0.7393,17.46,43.00%,6.64%,6.09%
+8,"1,101",585,46,46,0.8077,0.8990,0.8616,14.93,53.13%,4.18%,4.18%
+9,"1,101",631,27,36,0.8992,0.9512,0.9292,12.20,57.31%,2.45%,3.27%
+10,"1,101",666,26,28,0.9512,0.9986,0.9723,9.12,60.49%,2.36%,2.54%
+
+Separations:
+metric,separation
+pct_installed,56.77%
+pct_area_decline,23.43%
+pct_address_not_clear,45.14%
+
+Read: probability dominates raw distance on every metric.
+"At prob_decile 1, ~48% of allocations end in 'couldn't understand address'. When the GNN"
+"thinks the match is poor, partners dismiss via address_not_clear almost half the time."
+Direct numerical support for the dismissal-leak hypothesis.
+
+## 7. NEAREST_TYPE GROUPBY (active_base vs splitter)
+
+Partners with no prior install have no active_base point -- the system uses 'splitter'
+(a fixed distribution point) as the install-proxy. Splitter is the cold-start signal.
+
+nearest_type,total_obs,n_installed,n_area_decline,n_address_not_clear,d_min,d_max,d_median,pct_installed,pct_area_decline,pct_address_not_clear
+active_base,"8,289","3,062",845,"1,157",0.000,199.680,17.910,36.94%,10.19%,13.96%
+splitter,"3,581",784,582,791,0.530,448.220,24.920,21.89%,16.25%,22.09%
+
+Read: splitter share ~30%. Install rate ~22% vs ~37% for active_base (-15pp).
+Both decline buckets ~6pp higher for splitter. Splitter d_median is higher (~25 vs ~18 km) --
+raw gap partly distance-driven. Matched-distance contrast is the cleaner next step.
+
+## 8. PROB DECILE × NEAREST_TYPE  --  does GNN already encode type?
+
+"If GNN learned from the splitter edges Maanas fed it, two things should hold:"
+  (a) It should route splitters to lower prob deciles (composition shifts).
+"  (b) Within a fixed prob decile, active_base and splitter should install at similar rates."
+
+8a. Composition -- % splitter per prob decile:
+prob_decile,total,splitter,active_base,pct_splitter
+1,"1,101",422,679,38.33%
+2,"1,101",415,686,37.69%
+3,"1,101",432,669,39.24%
+4,"1,100",391,709,35.55%
+5,"1,101",359,742,32.61%
+6,"1,101",350,751,31.79%
+7,"1,100",318,782,28.91%
+8,"1,101",263,838,23.89%
+9,"1,101",254,847,23.07%
+10,"1,101",134,967,12.17%
+
+Read: monotonic decline 38% -> 12% splitter share. GNN DOES route splitters to low prob. (a) PASSES.
+
+"8b. Side-by-side rates per (prob_decile, nearest_type):"
+prob_decile,nearest_type,total,n_installed,n_area,n_addr,p_median,d_median,pct_installed,pct_area,pct_addr
+1,active_base,679,33,176,290,0.0062,43.52,4.86%,25.92%,42.71%
+1,splitter,422,8,108,235,0.0082,42.22,1.90%,25.59%,55.69%
+2,active_base,686,52,139,222,0.0376,38.15,7.58%,20.26%,32.36%
+2,splitter,415,15,114,150,0.0401,37.73,3.61%,27.47%,36.14%
+3,active_base,669,129,104,166,0.1122,27.87,19.28%,15.55%,24.81%
+3,splitter,432,20,130,121,0.1138,36.92,4.63%,30.09%,28.01%
+4,active_base,709,211,97,106,0.2361,22.66,29.76%,13.68%,14.95%
+4,splitter,391,51,65,86,0.2331,28.89,13.04%,16.62%,21.99%
+5,active_base,742,248,69,67,0.4020,20.98,33.42%,9.30%,9.03%
+5,splitter,359,80,49,49,0.3964,23.82,22.28%,13.65%,13.65%
+6,active_base,751,310,48,55,0.5743,18.06,41.28%,6.39%,7.32%
+6,splitter,350,102,29,36,0.5743,22.43,29.14%,8.29%,10.29%
+7,active_base,782,358,51,49,0.7411,16.59,45.78%,6.52%,6.27%
+7,splitter,318,115,22,18,0.7335,20.31,36.16%,6.92%,5.66%
+8,active_base,838,459,33,31,0.8618,13.53,54.77%,3.94%,3.70%
+8,splitter,263,126,13,15,0.8609,19.20,47.91%,4.94%,5.70%
+9,active_base,847,497,20,25,0.9299,11.18,58.68%,2.36%,2.95%
+9,splitter,254,134,7,11,0.9271,16.47,52.76%,2.76%,4.33%
+10,active_base,967,589,23,20,0.9730,8.63,60.91%,2.38%,2.07%
+10,splitter,134,77,3,8,0.9665,11.69,57.46%,2.24%,5.97%
+
+"Read: at every prob decile, splitter installs LESS than active_base. Gap collapses at extremes"
+"(decile 1: ~3pp, decile 10: ~3pp) but is 10-17pp at mid-prob (deciles 3-6). (b) PARTIAL PASS."
+
+Interpretation (two non-exclusive reads):
+  1. Model-side: GNN has less signal on splitter edges than decision edges -- noisier in the middle.
+"  2. Partner-side: splitters face real-world friction (no routing experience, no local infra)"
+     that doesn't show up in any graph edge -- genuine meatspace cold-start.
+Matched-distance 2km bins within fixed prob decile would split these.
+
+"## 9. DIAGNOSTIC SLICE  --  conditional-accept (decomposition, NOT operational comparison)"
+
+"CAVEAT before reading: this is a diagnostic decomposition, not an operational comparison."
+Allocation runs BEFORE partner decisions (see section 14). This slice tells us WHERE
+probability's unconditional edge over distance comes from -- it does NOT tell us what
+Allocation should use as its ranking signal.
+
+"Slice: filter to decision_event IN ('INTERESTED','ASSIGNED'), then install_rate by decile."
+Purpose: separate the partner-willingness leg from the install-physics leg.
+
+cohort,accepted only,"n=7,675 (64.7% of non-BDO)"
+
+Separation comparison (D1 -> D10):
+slice,distance,probability
+unconditional (all decisions -- production-relevant),43.81%,56.77%
+conditional-accept (diagnostic only),40.15%,39.95%
+
+Two reads from this slice:
+  a. Physical ceiling at the tail: at D10 conditional-install is 22.79%. Even accepted
+     bookings fail 3 of 4 times at ~74km. This is Wiom's fiber-reach Shannon limit.
+     Informs: treat 50km+ as a tail refusal zone (action #2 in recommendations).
+  b. Decomposition of prob's advantage: prob carries install-physics signal AND partner-
+"     willingness signal. Conditional-accept strips the willingness channel, leaving just"
+     physics. Both axes carry similar physics signal (~40% sep). Prob's unconditional
+     57% vs distance's 44% = the ~13pp willingness-channel contribution.
+
+Do NOT read this as 'probability is really just a decline predictor'. The willingness
+"channel is a real, valid signal that Allocation needs at inference time -- partners"
+"haven't declined yet, but the GNN knows from history who usually does. That's the"
+information distance can't encode.
+
+Earlier rounds of analysis misread this slice as a critique. That reading was retracted
+in round 6 (see section 14 + timeline).
+
+## 10. TENURE-GAP INVESTIGATION  --  what drives the splitter-vs-active_base install gap?
+
+Hypotheses tested against partner-level data from t_partner + t_active_base + t_node_splitter_gs:
+  H1 -- Cold-start: gap comes from newer partners who haven't built active_base yet.
+  H2 -- Splitter-share: gap comes from partners who roam-submit lat/lng as splitter points to
+        attract bookings. Gaming-adjacent behavior unseen by the GNN.
+
+10a. Install rate by tenure_bucket x nearest_type (H1 test):
+tenure,active_base,splitter,gap (pp)
+<=30d,33.33%,64.29%,"-31.0  (splitter WINS, small n=54)"
+31-90d,44.44%,39.68%,+4.8
+91-180d,37.50%,18.00%,+19.5
+181-365d,34.68%,25.76%,+8.9
+366-730d,35.16%,19.72%,+15.4
+730d+,38.59%,20.97%,+17.6
+
+Read: gap persists (18pp) for 730d+ mature partners. Tenure does NOT explain the gap. H1 REJECTED.
+
+10b. Install rate by prob_decile x partner_splitter_share (H2 test):
+  splitter_share = splitter_count / (splitter_count + active_base_count)  [dedup'd lat/lng]
+prob_decile,share 0-10%,share 10-50%,share 50-90%,share 90-100%
+3,24.41%,13.12%,7.52%,4.76%
+4,35.77%,20.48%,19.22%,5.00%
+5,39.52%,24.69%,29.75%,33.33%
+6,41.43%,36.57%,35.76%,n=6
+7,46.39%,41.03%,43.92%,n=1
+8,58.03%,48.53%,54.94%,n=0
+
+"Read: at prob_decile 4, partners with <10% splitter share install at 35.77% vs 5.00% for partners"
+with >90% splitter share. 31pp gap at the SAME probability. H2 SUPPORTED. Gaming-adjacent partners
+get mid-prob rankings they don't deserve based on actual install performance. GNN does not currently
+discount this. High prob deciles have ~0 high-splitter-share partners -- GNN correctly filters the
+"extreme tail, but the middle is where the leak sits."
+
+"Note: t_node_splitter_gs already stored as distinct (partner, lat, lng) -- 0 duplicate rows."
+"Gaming pattern = many *different* lat/lngs per partner, not repeated pings of one point."
+
+## 11. KEY FINDINGS  --  full stack
+
+#,finding
+1,Distance predicts install rate: ~50% -> ~7% across non-BDO deciles. Unconditional separation 44%.
+2,"Probability outperforms distance unconditionally (57% sep) but COLLAPSES to match distance when we condition on accept (40% vs 40%). Probability was modeling decline-likelihood, not physical install probability."
+3,"At distance D10, conditional install rate is 22.79% (even accepted bookings fail 3 of 4 times). Physical ceiling at the tail."
+4,"Address_not_clear is a dismissal channel, not pure parsing failure. 48% at prob_decile 1, 2.5% at decile 10."
+5,The 10-17pp splitter vs active_base install gap is NOT tenure-driven. 730d+ partners show 18pp gap. H1 rejected.
+6,The gap IS partner splitter_share driven. At prob_decile 4: 35.77% install (share<10%) vs 5.00% install (share>90%). 31pp gap at same GNN probability. H2 supported.
+7,Non-BDO is 43.5% of total volume but has SHALLOWER distance gradient -- BDO was driving some of the raw signal.
+8,Decile 10 tail is data hygiene -- isolate as separate population before trusting as a decile.
+
+## 12. OPEN QUESTIONS & NEXT STEPS
+
+From Geoff (first-principles review):
+id,status,item
+G1,RESOLVED,Conditional-accept at tail -- done. Tail is a physical ceiling (22.79% install even among accepted at D10).
+G2,open,Dropdown-UX check: is 'Address unclear' the default/top option in the partner app? Occam before dismissal.
+G3,open,Within-partner contrast across deciles -- holds partner constant while distance varies.
+G4,open,Within-geohash contrast across partners -- holds substrate constant while partner varies.
+
+From Donna (systems review):
+id,status,item
+D1,open,"Time-to-decline by decile × reason -- dismissal is fast, parse-failure has modal lag."
+D2,open,"Drop partner_id equality in install join -- measure same-booking different-partner recovery (breaks match-level framing, booking-level future)."
+D3,mostly resolved,Matched-distance bins active_base vs splitter -- partially addressed by tenure-gap investigation (H2 done).
+D4,open,"Rule-layer fix: if an address_not_clear booking later installs via ANY partner, reclassify original dismissal -- breaks the reinforcing dismissal loop."
+D5,open,Instrument holding-stock between allocation and decision -- queue depth may drive decline quality.
+
+From tenure-gap investigation:
+id,status,item
+T1,open,Splitter gaming type: are splitter points clustered near real address (territory inflation) or geographically scattered (lead harvesting)? Per-partner max_dist_from_centroid + radius percentile.
+T2,open,Add splitter_share as a GNN feature (or a post-hoc down-weight at mid-prob). The model is currently calibrated on a signal partners are gaming.
+T3,open,18 cohort partners missing from t_partner (0.2%). Low impact but worth understanding -- are they deleted / migrated / wrong key type?
+
+## 13. REVISED READ  --  HOW TO LOOK AT THE DATA NOW (Geoff + Donna round 3)
+
+Both agents independently converged on a re-factoring of how we should think about Allocation.
+
+From Geoff (first-principles):
+  P(install) = P(accept) * P(install | accept)
+"  Distance predicts the SECOND term (physics: cable reach, survey fatigue, travel)."
+  Probability predicts the PRODUCT but mostly loads on the FIRST term (partner willingness).
+"  When you condition on accept, you kill term 1 -- prob and distance both collapse to term 2,"
+  which is geometric. The GNN's apparent dominance over distance was compositional. The D10
+  conditional install rate of 22.79% is Wiom's fiber-reach Shannon limit -- no ranking punches through.
+
+From Donna (systems):
+  Splitter submission is a reinforcing 'success to the successful' loop (Meadows #3):
+    more splitters submitted -> wider notification footprint -> more allocations
+    -> occasional installs -> partner perceives gaming as rational -> more splitters
+  No balancing loop exists because splitter points never expire or get validated against installs.
+  The stock being gamed is PERCEIVED SERVICEABILITY.
+
+Convergent inferences:
+#,inference
+1,"Allocation objective should factorize: (a) accept model = P(accept|notification), (b) conditional-install model = P(install|accept). Rank on the product but inspect each leg."
+2,The current GNN 'probability' is a decline-likelihood predictor wearing fit-predictor clothes. Distance is an orthogonal geometric signal governing the physics leg.
+3,Adding splitter_share as a GNN feature is a band-aid. Gamers will mutate the pattern (e.g. keep share below threshold via multiple partner IDs). Durable fix: validate splitter points against install outcomes -- turn unbounded stock into one with a decay flow.
+4,"The training label itself is contaminated -- gamers generate splitter points AND fail to install. Every retrain re-inherits the pathology. Real fix is UPSTREAM, before nearest-distance computation."
+5,Geoff's architectural question: does Allocation need a REFUSAL PRIMITIVE? A way to return a booking to Promise Maker saying 'no partner I rank can clear the physics bar.' Today every booking routes; losses absorb as declines.
+6,"D10 is a hard physical ceiling (~23% conditional install). Any intervention at D10 is about routing away, not improving. Needs to be disambiguated from data-hygiene tail (448km+)."
+
+Next-step leverage ranking (merged):
+rank,item,why
+1,Time-to-decline by decile x reason (D1),Separates willingness from physics -- the whole ballgame post-conditional-accept.
+2,Within-partner across deciles (G3),Holds partner constant. Cleanest test of distance-as-physics-ceiling.
+3,Reclassify address_not_clear on ANY-partner install (D4),Turns self-reported dismissal into outcome-validated signal. Breaks the gaming reward.
+4,Instrumentation for gaming detection (Donna new),Watch slopes of submission-rate vs install-conversion-rate per partner. Gaming signature shows in derivatives.
+5,Different-partner recovery (D2),"Required for D4. Breaks match-level framing, goes booking-level."
+6,Within-geohash across partners (G4),Holds substrate constant. Confirms gaming is partner-side.
+7,Holding-stock queue depth (D5),Medium leverage. Explains latency-driven declines.
+8,Dropdown UX check (G2),Small. Occam before dismissal.
+
+## 14. FINAL READ  --  distance vs GNN probability for Allocation ranking
+
+Operational context: Allocation runs BEFORE partner decisions -- it ranks candidate
+"partners by install likelihood, and the top-ranked partner is notified first. The"
+relevant comparison is therefore UNCONDITIONAL -- on the data a new booking actually
+arrives with (no accept/decline signal yet).
+
+"Unconditional separation matrix (non-BDO, D1 -> D10 spread):"
+category,distance sep,GNN prob sep,winner
+Install rate,44%,57%,Prob by 13pp
+Area decline,20%,23%,Prob slightly
+Address not clear,19%,45%,Prob by 26pp
+
+Concentration in worst 3 deciles (the decision-utility metric for top-k notification):
+signal,% area-declines in worst-3 deciles,interpretation
+"GNN probability (D1+D2+D3, lowest)",59.3%,"Drop bottom 30% of volume, avoid 59% of area declines"
+"Distance (D8+D9+D10, farthest)",47.9%,"Drop bottom 30% of volume, avoid 48% of area declines"
+GNN is 11pp more concentrated on bad outcomes. Concentration matters more than
+separation for a notify-top-k decision.
+
+Splitter composition (does the signal isolate gaming?):
+rank axis,%splitter at worst decile,%splitter at best decile,behavior
+GNN probability,38.33% (D1 low prob),12.17% (D10 high prob),Monotonic -- GNN routes splitters to low prob
+Distance,11.61% (D1 near),peak 41.18% at D7 (~29km),Scattered -- distance does NOT isolate splitters
+
+"Distance is a GAMEABLE axis: partners submit their own splitter lat/lngs, which"
+directly affect the nearest_distance they see. GNN integrates DECLINE HISTORY that
+"gamers cannot fake, creating an active balancing loop on gaming behavior."
+
+"Why GNN wins: it learns from decline signals, distance doesn't."
+  A distance-based approach is a fixed geometric cut -- it cannot adapt to partner
+  behavior. It does not price decline signals partners send. A partner who declines
+"  80% of allocations looks identical to one who installs 80%, if they're at the same"
+  distance. The GNN integrates both install and decline edge types (per Maanas's
+"  design), weighted geographically and temporally. The GNN's advantage IS the"
+  decline-signal channel. Any signal that doesn't learn from declines gives this up.
+
+Diagnostic slice -- conditional-accept (NOT production-relevant):
+"  When we filter to decision_event IN ('INTERESTED','ASSIGNED'), the install-rate"
+"  separations become: distance 40%, probability 40%. They tie. But this is not what"
+  Allocation sees at inference time -- Allocation ranks BEFORE any decision is known.
+  The conditional-accept collapse is just the decline signal being removed from the
+"  data, which is precisely what GNN is designed to price. Earlier rounds of analysis"
+  (and two agent rounds) over-read this as a critique. Retracted.
+
+Shape of decline curves on distance (independent observation):
+category,shape on distance
+Area-decline,"Step function -- flat D1-D5 (~7-9%), step up D6 (~10%), big jump D10 (+9pp)"
+Address-not-clear,"Smooth monotonic rise, ~3pp per decile, 9.8% -> 28.5%"
+The address-not-clear monotonic rise IS the dismissal-leak signature -- partners
+farther out use 'address unclear' as a polite decline regardless of actual address
+"clarity. If it were pure parsing failure, the curve would be flat on distance."
+
+"## 15. GNN CONTEXT  --  side note (parked, not load-bearing)"
+
+This analysis was NOT about GNN architecture. The data answers above stand on their
+own. This section is context for future GNN work only.
+
+"Design intent (per Maanas): for every target booking, build a graph that looks at"
+"historical install and decline decisions by a partner, across partners, along with"
+"splitter data. Decisions + splitters become edge types, geographically + temporally"
+"separated. The GNN then predicts whether a target (booking, partner) match will install,"
+based on how the partner has behaved across actions (install or decline) in space and time.
+
+"One detail worth flagging for future GNN work, surfaced during analysis:"
+  - create_gnn.py computes a precomputed attention bias per edge:
+      attention = exp(-time) * 1/(1+dist) * (1 - DECLINED) * (1 + INSTALLED)
+    and stores it as the last column of edge_attr.
+  - The GATConv instances are initialized WITHOUT edge_dim.
+"  - In PyTorch Geometric, edge_attr is consumed by GATConv only when edge_dim is set"
+"    at init (which builds lin_edge). Without edge_dim, edge_attr is silently dropped"
+    (older PyG) or raises (newer PyG).
+  - Likely implication: the precomputed attention formula is ORPHAN at runtime --
+    computed and stored but not consumed. Message passing uses GATConv's own learned
+    attention over node features + topology. Both install and decline edge types
+"    contribute first-class messages, exactly as intended."
+  - If confirmed at execution: either the HTML doc's attention-interaction claim
+"    needs revision, or the code should pass edge_dim=1 to activate the precomputed bias."
+
+Earlier rounds of Geoff + Donna review (round 4) built an 'architectural critique'
+"(decline-complement, survivorship bias, three structural fixes) on the documented"
+attention formula. That critique was retracted in round 5 when the code was read.
+Logged here for completeness; not load-bearing on this analysis.

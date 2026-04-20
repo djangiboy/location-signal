@@ -1,0 +1,222 @@
+BOOKING-vs-INSTALL DISTANCE  --  STAGE B OF PROMISE MAKER GPS AUDIT
+Last run              : 2026-04-20 17:37:52
+"Analysis period (bkg) : 2025-12-01 to 2026-01-01  (booking events, Delhi)"
+"Analysis period (inst): 2025-12-01 to 2026-02-28  (install pings, 2-mo lookahead)"
+"Cohort                : Delhi, Dec 2025 installed bookings, non-BDO (bdo_lead=0 Python-side filter)"
+"Stage A reference     : p95 = 154.76m (per-ping jitter, from ../gps_jitter/STORY.csv section 6)"
+"Status                : Stage B cohort pulled, funnel built, deciles computed."
+
+OPERATIONAL CONTEXT + FRAMING CORRECTION (read before interpreting numbers):
+  The 25m Promise Maker gate tests:
+"      distance(booking_lat/lng, nearest historical install or splitter) <= 25m"
+  It does NOT test drift. It does NOT test 'is booking_lat/lng accurate'.
+  Drift is invisible to the gate itself.
+
+  What Stage B measures is INPUT QUALITY LOSS:
+"      install_drift_m = haversine(booking_lat/lng, first wifi_connected_location_captured)"
+  That number tells us how far booking_lat/lng is from the SSID-validated true
+  home. Every downstream consumer that trusts booking_lat/lng ~ true home
+"  (Promise Maker, Allocation GNN's nearest_distance, partner navigation) is"
+  operating on a point that drifts from ground truth by this distance.
+
+## 1. THE QUESTION
+
+How reliable is booking_lat/lng as an input to downstream matchmaking systems?
+How much of the observed booking-vs-install drift is pure GPS apparatus noise
+(physically unavoidable) vs structural booking-capture error (upstream-fixable)?
+
+## 2. COHORT & FUNNEL
+
+Source  : query_install_drift.txt (this folder)
+"Booking : 2025-12-01 to 2026-01-01  (booking events, Delhi)"
+"Install : 2025-12-01 to 2026-02-28  (install pings, 2-mo lookahead)"
+"Key columns: booking_lat/lng (from lead_state='serviceable'), install_lat/lng"
+"(from first wifi_connected_location_captured), booking_accuracy, bdo_lead,"
+"time_bucket, install_drift_m (haversine, SQL-side)."
+
+Funnel (ALL counts tie back to raw):
+step,n_rows,pct_kept_vs_raw,note
+raw_pull,"9,749",100.0%,"Delhi Dec-2025 installed cohort, mobile-keyed"
+drop_bdo,"3,909",40.1%,"dropped 5840 BDO leads (ops-captured, different journey)"
+drop_null_booking_coords,"3,909",40.1%,dropped 0 rows with missing booking lat/lng
+drop_null_install_coords,"3,855",39.5%,dropped 54 rows where SSID never connected within 2-month lookahead
+stage_b_clean,"3,855",39.5%,"final Stage B analysis cohort (non-BDO, non-null coords)"
+
+"RAW PULL = 9,749 Delhi Dec-2025 installed mobiles."
+"After BDO drop + null-coord drops, STAGE B CLEAN COHORT = 3,855"
+(39.5% of raw). BDO dominates (60% of installed cohort) --
+consistent with the ops-led install pattern seen in allocation_signal/.
+
+## 3. METHODOLOGY -- WHAT COUNTS AS DRIFT
+
+For each installed non-BDO booking:
+"  install_drift_m = haversine(booking_lat, booking_lng, install_lat, install_lng)"
+
+Where:
+  booking_lat/lng  : from the LATEST lead_state='serviceable' event before Jan 1
+                     (this is what Promise Maker actually gated on)
+  install_lat/lng  : from the FIRST wifi_connected_location_captured event
+"                     (SSID-validated fix at the true home, post-install)"
+
+Stage A p95 subtraction:
+"  excess_drift_m = max(install_drift_m - 154.76, 0)"
+  Any drift below Stage A p95 is indistinguishable from pure apparatus noise
+  over a days-apart gap (booking -> install is typically a few days).
+  Drift above Stage A p95 is structural capture error.
+
+"## 4. DRIFT DISTRIBUTION -- DECILES  (n = 3,855)"
+
+"pd.qcut on install_drift_m. D1 = tightest, D10 = widest. freq sums to n."
+decile,freq,d_min,d_max,d_mean,d_median
+1,386,0.00,2.64,1.40,1.40
+2,385,2.64,5.30,3.90,3.93
+3,386,5.30,8.88,7.02,7.03
+4,385,8.88,14.10,11.24,11.01
+5,386,14.10,22.52,17.77,17.58
+6,385,22.52,47.05,32.27,30.90
+7,385,47.21,117.57,76.86,74.76
+8,386,118.04,232.74,167.13,162.65
+9,385,232.86,477.62,343.68,340.73
+10,386,479.29,"213,846.05","2,229.74",767.78
+
+D1-D5 (50% of cohort) have drift <= 22.52m.
+D6 (22.52-47.05m) just exceeds the 25m reference point.
+D7 (47.21-117.57m) is within Stage A apparatus noise (< p95 = 154.76m).
+D8 (118.04-232.74m) crosses the Stage A p95 -- entering structural territory.
+"D9 (232.86-477.62m) and D10 (479.29-213,846m) are unambiguously structural."
+
+## 5. DRIFT QUANTILES
+
+quantile,install_drift_m
+p01,0.46
+p05,1.40
+p10,2.64
+p20,5.30
+p25,7.03
+p30,8.88
+p40,14.10
+p50,22.52
+p60,47.11
+p70,117.95
+p75,162.65
+p80,232.76
+p85,340.73
+p90,478.62
+p95,767.16
+p99,"2,870.83"
+
+Headlines:
+  p50 = 22.52m  -- the MEDIAN drift sits right at the 25m reference.
+  p75 = 162.65m -- the top quartile drifts BEYOND Stage A's noise floor.
+  p95 = 767.16m -- 1 in 20 bookings has drift >3/4 km from true home.
+"  p99 = 2,870.83m -- 1 in 100 has drift > 2.9km."
+
+## 6. STAGE A (apparatus noise) vs STAGE B (booking->install drift)
+
+"Same quantile, different reference frame. Stage A = per-ping jitter across"
+days/months against the anchor (pure apparatus noise). Stage B = booking->install
+drift (apparatus noise + any booking-time capture error).
+
+quantile,stage_a_m,stage_b_m,ratio
+p50,7.66,22.52,2.9x
+p75,19.98,162.65,8.1x
+p90,88.61,478.62,5.4x
+p95,154.76,767.16,5.0x
+p99,227.89,"2,870.83",12.6x
+
+Stage B is UNIFORMLY wider than Stage A at every quantile. Booking capture
+"adds structural error on top of apparatus noise across the entire distribution,"
+not just in the tail. The multiplier peaks at p75 (8x) and p99 (13x).
+
+"## 7. EXCESS DRIFT  (= max(install_drift_m - Stage A p95, 0))"
+
+"Zero-excess (drift <= 154.76m, absorbed by Stage A):"
+"  2,864 / 3,855 installs (74.3%) -- apparatus noise fully explains these drifts"
+"  991 / 3,855 installs (25.7%) -- STRUCTURAL capture error exists"
+
+Excess drift deciles (80% of cohort collapsed into D1 at zero):
+decile,freq,d_min,d_max,d_mean,d_median
+1,"3,084",0.00,77.98,2.60,0.00
+2,385,78.10,322.86,188.92,185.97
+3,386,324.53,"213,691.29","2,074.98",613.02
+
+Excess drift quantiles:
+quantile,excess_drift_m
+p01,0.00
+p05,0.00
+p10,0.00
+p20,0.00
+p25,0.00
+p30,0.00
+p40,0.00
+p50,0.00
+p60,0.00
+p70,0.00
+p75,7.89
+p80,78.00
+p85,185.97
+p90,323.86
+p95,612.40
+p99,"2,716.07"
+
+"Reading: the NON-zero excess mass (25.7%) has median excess drift of 186m,"
+"p90 of 324m, p99 of 2.7km. These bookings had coords that were wrong BEYOND"
+"anything GPS physics can produce -- i.e., stale cache, user error, UI mistake."
+
+## 8. DRIFT REFERENCE BANDS  --  NOT GATE OUTCOMES
+
+IMPORTANT FRAMING: these bands classify the DRIFT distribution against two
+"reference points (25m gate radius, Stage A p95). They are NOT the outcome of"
+"the 25m Promise Maker gate, which never tests drift."
+
+drift_band,n,drift_min,drift_max,drift_median,pct
+A. <=25m (within Promise Maker gate radius),"1,987",0.00,24.87,7.25,51.5%
+B. 25-154.76m (within Stage A p95 -- apparatus-explainable),877,25.02,153.77,61.49,22.7%
+C. >154.76m (beyond apparatus -- structural capture error),991,154.79,"213,846.05",389.96,25.7%
+
+Interpretation of each band:
+  A. <=25m           : drift is smaller than the gate's own search radius.
+"                       Even if the gate relied on drift tolerance, it would be OK."
+  B. 25-154.76m      : drift exceeds gate radius BUT fits within Stage A apparatus
+                       noise. Looks 'drifty' but could be explained by GPS physics.
+  C. >154.76m        : drift exceeds what Stage A apparatus noise can produce.
+                       Structural capture error -- upstream process/UI issue.
+
+51.5% in Band A tells us the booking coord is 'close enough' to the true home
+in half the cases. The other 48.5% is where downstream systems receive a
+degraded-to-bad coordinate.
+
+## 9. KEY FINDINGS
+
+#,finding
+1,"Stage B clean cohort = 3,855 Delhi Dec-2025 installed bookings (non-BDO, both coords present). 39.5% of raw pull survives after dropping BDO (60%) and null-coord rows (0.5%)."
+2,Median booking->install drift = 22.5m. Half of installed bookings have booking coord drifted by more than the 25m Promise Maker gate radius would consider 'precise'.
+3,p75 drift = 162.7m. Top quartile of installed bookings has booking coord drifted BEYOND Stage A's apparatus-noise p95 (154.8m).
+4,"25.7% of installs (991 of 3,855) have drift > Stage A p95. These are STRUCTURAL booking-capture errors -- wrong coordinates that GPS physics alone cannot produce. 3.2% have drift > 1km; 0.4% > 10km."
+5,"Stage B is uniformly wider than Stage A at every quantile (2.9x at p50, 8.1x at p75, 5x at p95, 12.6x at p99). The booking-capture process adds error on top of apparatus noise across the entire distribution, not just in the tail."
+6,"The 25m Promise Maker gate does NOT test drift (it tests booking_lat/lng vs nearest historical install). Drift is invisible to the gate. But the gate's BALL is centered on the booking coord -- if that coord is 100m off, the gate's 25m search is centered 100m off from the true home. Downstream gate behavior is therefore corrupted by the drift distribution, even though the gate never sees drift directly."
+7,Catastrophic data-hygiene tail: 16 installs (0.4%) have drift > 10km; max = 213km. Almost certainly wrong-city/wrong-address bookings. Worth isolating before any retrain that consumes booking_lat/lng as a feature.
+
+## 10. OPEN QUESTIONS / NEXT STEPS
+
+id,status,item
+B1,open,Does drift distribute unevenly across time_bucket? Rohan's hypothesis: late-night/indoor captures are noisier. Test on this cohort.
+B2,open,"Does booking_accuracy (device self-report) correlate with install_drift_m? Rohan's notebook said WEAK on smaller cohort -- retest on n=3,855."
+B3,open,"Catastrophic-tail isolation: 16 installs with drift > 10km. Pull their booking_lat/lng, install_lat/lng, time_bucket -- are they wrong-city, wrong-pincode, or just tap-errors?"
+B4,open,"Decline-cohort comparison: pull Delhi Dec-2025 DECLINED bookings (same query minus installed-mobiles join). Compare booking_accuracy and time_bucket distributions. If declined shows different pattern than installed, Promise Maker has a systematic admit-bias tied to booking GPS noise."
+B5,open,Cross-link back to allocation_signal/: does Stage B drift correlate with nearest_distance D10 tail (448km outliers)? Merge on mobile.
+B6,open,"Intervention candidates: pincode reverse-geocode cross-check, force re-capture on low booking_accuracy, map-pin confirmation with landmarks. Each would reduce the 25.7% structural-error mass."
+
+## 11. ARTIFACTS
+
+file,purpose
+query_install_drift.txt,"Snowflake query (simpler than parent's Location capture funnel.sql) -- installed-only, bdo_lead as column"
+pull_install_drift.py,"Runs query -> investigations/install_drift_raw.csv, prints coverage + quicklook"
+build_drift.py,"Python-side funnel (drop BDO, drop nulls), deciles, quantiles, reference bands"
+write_story.py,Assembles this STORY.csv
+investigations/install_drift_raw.csv,"9,749 raw rows"
+investigations/drift_funnel.csv,Per-step attrition
+investigations/drift_cohort_clean.csv,"3,855 clean rows + excess_drift_m + drift_band"
+"investigations/drift_deciles.csv, drift_quantiles.csv",Full grids for install_drift_m
+"investigations/excess_drift_deciles.csv, excess_drift_quantiles.csv",Full grids for excess_drift_m
+investigations/drift_gate_bands.csv,Three-band distribution

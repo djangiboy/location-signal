@@ -1,0 +1,275 @@
+# Polygon-based analysis — partner serviceable boundaries vs pair install
+Created: 2026-04-20 11:29
+Updated: 2026-04-20T15:33
+"Cohort: 2,561 pairs (Jan-Mar 2026 Delhi non-BDO) from ../pair_aggregated.csv"
+Polygon source: promise_maker/B/training/partner_cluster_boundaries.h5
+"  1,840 cluster polygons across 1,105 partners"
+  built via DBSCAN over hex cells above p30 install density
+""
+""
+## 1. Objective
+""
+Test whether the partner's proven serviceable polygon (built from install history) is a stronger moderator of install success than raw `nearest_distance`.
+Three questions:
+"  (a) Of 2,561 pairs, how many are eligible (partner has a polygon)?"
+  (b) Does being INSIDE vs OUTSIDE the polygon change install rate and reason mix?
+"  (c) For pairs INSIDE, does depth (distance-from-edge / from-center) further differentiate?"
+Polygons vary in shape per partner — both raw meters and normalized (by equivalent_radius = sqrt(area_km2*1e6/pi)) are computed.
+""
+## 1b. How the polygon is actually built (supply-efficiency map)
+""
+Verified from promise_maker/B/training/hex.py:
+  se = installs / total     # total = installs + declines
+  color = crimson (se <= bad) | orange (se <= mid) | lightgreen (se > mid)
+find_boundary.py keeps only 'lightgreen' + 'orange' hexes before DBSCAN.
+"CRIMSON hexes (partner tried, mostly declined) are EXCLUDED."
+""
+"Implication: polygon is a SUPPLY-EFFICIENCY map, not raw install history."
+- Two partners with same install count but different decline patterns
+  get DIFFERENT polygons — declines SHRINK the polygon.
+- 'Inside' = partner has high SE here (CAN install + WILL try).
+- 'Outside' = partner never tried OR tried-and-mostly-declined.
+- Polygon is dynamic — updates with every install/decline decision.
+- We use the Feb 2026 snapshot.
+""
+## 2. Method
+""
+Spatial join via geopandas (predicate='within').
+  - Pair booking coords from allocation_cohort.csv (same booking_location CTE as query_pcalls.txt).
+"  - CRS: WGS84 for I/O, UTM zone 43N (EPSG:32643) for distance."
+"  - Per pair, multiple partner polygons reduced via tie-break: deepest-containing > nearest-edge."
+Distance metrics:
+"  - dist_edge_m (signed: + inside depth, - outside)"
+  - dist_center_m
+  - equivalent_radius_m = sqrt(area_km2 * 1e6 / pi)
+  - norm_dist_edge = dist_edge_m / equivalent_radius_m
+  - norm_dist_center = dist_center_m / equivalent_radius_m
+""
+"## 3. Polygon eligibility (of 2,561 pairs)"
+""
+bucket,n,pct_of_total
+total pairs,"2,561",100.0
+with booking coords,"2,559",99.9
+with polygon,"2,499",97.6
+no polygon,62,2.4
+inside polygon,"1,939",75.7
+outside polygon,560,21.9
+""
+"## 4. TABLE 1 — Inside vs Outside (of 2,499 pairs with polygon)"
+""
+"Install rate AND address_not_clear touch rate (pair ever touched ANC across calls, from reasons_union), with grand total row."
+""
+polygon_side,pairs,installed,install_rate_%,anc_pairs,anc_rate_%
+inside,"1,939","1,072",55.3,852,43.9
+outside,560,216,38.6,270,48.2
+GRAND TOTAL,"2,499","1,288",51.5,"1,122",44.9
+""
+Outside pairs: LOWER install (38.6%) AND HIGHER ANC touch rate (48.2%). Both directions confirm polygon-outside = harder.
+Within ANC-primary pairs specifically: inside 63.2% install vs outside 43.8% (+19.4pp gap).
+""
+## 5. Inside vs outside — reason mix
+""
+primary_first,inside_n,outside_n,inside_%,outside_%
+address_not_clear,690,217,35.6,38.8
+address_too_far,21,9,1.1,1.6
+address_wrong,9,2,0.5,0.4
+building_access_issue,6,1,0.3,0.2
+competitor_or_consent,7,2,0.4,0.4
+customer_cancelling,63,17,3.2,3.0
+customer_postpone,112,26,5.8,4.6
+customer_unreachable,102,25,5.3,4.5
+duplicate_or_existing_connection,33,7,1.7,1.2
+install_site_technical,21,4,1.1,0.7
+noise_or_empty,394,127,20.3,22.7
+other,3,0,0.2,0.0
+partner_no_show,24,6,1.2,1.1
+partner_postpone,25,10,1.3,1.8
+partner_reached_cant_find,89,21,4.6,3.8
+payment_issue,15,4,0.8,0.7
+price_or_plan_query,44,14,2.3,2.5
+router_or_stock_issue,4,1,0.2,0.2
+slot_confirmation,204,45,10.5,8.0
+wrong_customer,73,22,3.8,3.9
+""
+"Reason distribution is essentially stable inside vs outside (address_not_clear: 35.6% inside, 38.8% outside — 3pp shift). The polygon side does NOT change what partners talk about much — it changes whether the conversation converts to install."
+""
+## 6. address_not_clear pairs: install rate by side
+""
+polygon_side,pairs,installed,install_rate_%
+inside,690,436,63.2
+outside,217,95,43.8
+""
+"Inside polygon, address friction is surmountable 63% of the time."
+"Outside polygon, only 44%. +19.4pp gap."
+"Address friction APPEARS at similar rate inside vs outside (35.6% vs 38.8%), but RESOLVES much better inside."
+""
+"## 7. TABLE 2 — INSIDE pairs (n=1,939), quintiles (q=5)"
+""
+"Q1=shallow/near-center (depending on metric), Q5=deep/far."
+"Each quintile row: pairs, metric range, install_rate_%, anc_rate_% (ANC touch from reasons_union). Grand total at end of each metric."
+""
+"-- (2a) by dist_edge_m — raw meters; Q1=shallowest, Q5=deepest --"
+q5,pairs,metric_min,metric_median,metric_max,installed,install_rate_%,anc_pairs,anc_rate_%
+1,388,0.08,25.20,47.76,193,49.7,186,47.9
+2,388,47.79,69.82,94.17,219,56.4,173,44.6
+3,387,94.70,118.49,146.30,212,54.8,155,40.1
+4,388,146.40,178.75,217.88,213,54.9,168,43.3
+5,388,218.14,295.45,653.91,235,60.6,170,43.8
+GRAND TOTAL,"1,939",0.08,118.49,653.91,"1,072",55.3,852,43.9
+""
+"-- (2b) by norm_dist_edge — scale-invariant; Q1=shallow, Q5=deep  [CLEANEST] --"
+q5,pairs,metric_min,metric_median,metric_max,installed,install_rate_%,anc_pairs,anc_rate_%
+1,388,0.00,0.12,0.22,191,49.2,185,47.7
+2,388,0.22,0.31,0.39,214,55.2,168,43.3
+3,387,0.39,0.49,0.57,229,59.2,173,44.7
+4,388,0.57,0.66,0.76,211,54.4,173,44.6
+5,388,0.76,0.92,1.50,227,58.5,153,39.4
+GRAND TOTAL,"1,939",0.00,0.49,1.50,"1,072",55.3,852,43.9
+""
+"-- (2c) by dist_center_m — raw meters; Q1=near center, Q5=far --"
+q5,pairs,metric_min,metric_median,metric_max,installed,install_rate_%,anc_pairs,anc_rate_%
+1,388,4.64,103.99,152.90,217,55.9,157,40.5
+2,388,153.02,200.80,245.63,215,55.4,170,43.8
+3,387,245.66,296.24,356.18,218,56.3,188,48.6
+4,388,356.34,423.13,510.04,224,57.7,157,40.5
+5,388,510.60,652.24,"1,431.56",198,51.0,180,46.4
+GRAND TOTAL,"1,939",4.64,296.24,"1,431.56","1,072",55.3,852,43.9
+""
+"-- (2d) by norm_dist_center — inverse signal; Q1=near center, Q5=far --"
+q5,pairs,metric_min,metric_median,metric_max,installed,install_rate_%,anc_pairs,anc_rate_%
+1,388,0.02,0.50,0.69,230,59.3,155,39.9
+2,388,0.69,0.85,1.02,216,55.7,171,44.1
+3,387,1.02,1.20,1.38,221,57.1,176,45.5
+4,388,1.38,1.56,1.78,217,55.9,164,42.3
+5,388,1.78,2.12,3.80,188,48.5,186,47.9
+GRAND TOTAL,"1,939",0.02,1.20,3.80,"1,072",55.3,852,43.9
+""
+Q1 -> Q5 gaps across the four metrics:
+  dist_edge_m     : install 49.7 -> 60.6 (+10.9pp) | ANC 47.9 -> 43.8 (-4.1pp)
+  norm_dist_edge  : install 49.2 -> 58.5 (+9.3pp)  | ANC 47.7 -> 39.4 (-8.3pp)  CLEANEST
+"  dist_center_m   : install 55.9 -> 51.0 (-4.9pp)  | ANC 40.5 -> 46.4 (+5.9pp, inverse)"
+"  norm_dist_center: install 59.3 -> 48.5 (-10.8pp) | ANC 39.9 -> 47.9 (+8.0pp, inverse)"
+""
+Edge-distance and center-distance are INVERSE signals (deep inside ≈ close to center). Both point the same direction: depth inside proven territory = higher install + less address friction.
+Normalized > raw (Q1->Q5 gaps 9-11pp vs 5-10pp). Varying polygon shapes need size-normalization.
+"ANC touch rate inside vs outside (44% vs 48%) is a small 4pp gap. Install-rate gap (16.7pp) is much bigger. Polygon's role is primarily whether friction RESOLVES, not whether it APPEARS."
+""
+## 7b. Address-chain × polygon cross-cut
+""
+"Second-pass classifier (flag_address_chain.py) tags each call against the Delhi address-resolution hierarchy LANDMARK -> GALI -> FLOOR. addr_chain_stuck_at_mode = dominant stuck-point across the pair's calls (na if the pair wasn't address-talking, else which step broke)."
+""
+"(a) Distribution of addr_chain_stuck_at_mode is stable inside vs outside. Chain engagement happens at SIMILAR rates regardless of polygon side (col % of 2,499 eligible pairs):"
+addr_chain_stuck_at_mode,inside_%,outside_%,inside_n,outside_n
+na,75.2%,73.6%,"1,458",412
+landmark,8.9%,10.5%,172,59
+gali,8.7%,10.5%,168,59
+none,5.3%,4.1%,103,23
+floor,2.0%,1.2%,38,7
+TOTAL,100%,100%,"1,939",560
+""
+Confirms polygon side doesn't change WHAT partners discuss (stable reason mix AND stable chain engagement).
+""
+(b) Install rate by (addr_chain_stuck_at_mode × polygon_side):
+stuck_at_mode,inside_pairs,inside_install_%,outside_pairs,outside_install_%,gap_pp
+na,"1,458",52.6%,412,39.8%,+12.8
+landmark,172,62.2%,59,42.4%,+19.8
+gali,168,62.5%,59,25.4%,+37.1
+none,103,62.1%,23,34.8%,+27.3
+floor,38,76.3%,7,57.1%,+19.2
+""
+HEADLINE: gali-stuck × outside = 25.4% install. Gali-stuck × inside = 62.5%. +37.1pp gap — the biggest single-cell gap anywhere in the analysis. Lane-level ambiguity combined with no partner-polygon-coverage is the worst possible combination.
+Other takeaways: every stuck_at level shows a larger install gap by polygon side than the headline +16.7pp (which is the unconditioned average). The polygon effect compounds with chain-engagement difficulty.
+""
+(c) any_chain_engaged × polygon_side:
+polygon_side,chain_engaged,pairs,install_rate_%
+inside,no,"1,231",51.2%
+inside,yes,708,62.4%
+outside,no,359,37.6%
+outside,yes,201,40.3%
+""
+"Chain engagement adds +11.2pp install INSIDE (62.4% vs 51.2%) but only +2.7pp OUTSIDE (40.3% vs 37.6%). The 'chain engagement is protective' finding from the parent analysis is ALMOST ENTIRELY an INSIDE-POLYGON phenomenon. Outside the polygon, engaging the chain barely helps — you can agree on every landmark/gali/floor and still not install."
+""
+"(d) Within primary_first=address_not_clear (907 eligible ANC pairs), install rate by stuck_at × side:"
+stuck_at_mode,inside_pairs,inside_install_%,outside_pairs,outside_install_%,gap_pp
+na,405,62.0%,124,51.6%,+10.4
+landmark,95,68.4%,28,50.0%,+18.4
+gali,120,62.5%,47,21.3%,+41.2
+none,50,64.0%,13,38.5%,+25.5
+floor,20,65.0%,5,40.0%,+25.0
+""
+"Gali-stuck × outside × ANC = 47 pairs, 21.3% install — sharpest 'bottom of the barrel' signature. +41.2pp gap within ANC for gali-stuck."
+""
+""
+## 8. Headline findings
+""
+"1. 97.6% of pairs have polygon eligibility (2,499 / 2,561)."
+2. Inside-polygon pairs install at 55.3% vs outside at 38.6% — +16.7pp.
+"3. Within address_not_clear pairs, gap widens to +19.4pp (63% vs 44%)."
+4. Depth inside polygon differentiates further: shallow 44% -> deep 57% on normalized edge-distance.
+5. Reason distribution barely shifts inside vs outside (~3pp on ANC). Polygon side does not change WHAT partners talk about; it changes whether the conversation RESOLVES to install.
+""
+## 9. Implications
+""
+"Promise Maker: polygon-containment is a stronger serviceability signal than geometric nearest_distance. If a booking lands outside every partner's polygon, the promise is already on weaker ground. Consider soft-gating or penalty in Promise Maker upstream of Allocation."
+"Allocation: prefer partners whose polygon contains the booking (>=55% install baseline) over those whose polygon doesn't (<=39% baseline). Rank further by depth-inside, not just containment."
+""
+"## 9b. Geoff + Donna critique — circularity softened, not dissolved"
+""
+"Both agents were briefed twice: once on the original framing, once"
+after the SE correction. Convergent conclusion:
+""
+GEOFF (first-principles):
+  - Before SE correction: 'install history predicts install history' —
+    tautological.
+  - After SE correction: 'Shifted from installs predict installs to
+"    install-RATE predicts install-RATE. Less circular, not acircular."
+    The denominator (attempts) does the real disentanglement work.'
+  - Decisive test: Mar-only holdout. If 16.7pp gap collapses -> memorization.
+    If gap >= 10pp persists -> SE captures something temporally stable.
+  - Additional: stratify Mar by whether partner had ANY Jan/Feb attempts
+    in that hex. Pairs encountering a NEW hex in Mar = cleanest test.
+"  - Depth gradient (+9.3pp) is coherence signal with SE weighting, but"
+    still partly density-driven. Treat as suggestive.
+""
+DONNA (systems):
+"  - Absorbing-crimson trap: SE decay is event-driven, not time-driven."
+"    Once crimson, Allocation stops sending leads -> no attempts ->"
+    no recovery. Classic success-to-the-successful ratchet.
+  - Need gentle TIME-DECAY on hex confidence — hexes with no attempts
+    in N days should regress toward prior.
+  - Compound-signal problem: polygon conflates CAN (tacit knowledge)
+    + WILL (motivation/viability). Gating destroys ability to diagnose
+    which is failing. Need decline-reason logging at hex level.
+"  - ANC 4.3pp delta: real, small — true delta probably 3-6pp same"
+    direction. Not noise; weak confirmation pending more pairs.
+  - Cleanest finding (per Donna): reason mix is STABLE inside vs outside
+    (3pp shift). The polygon doesn't change WHAT partners talk about —
+    it changes whether the conversation RESOLVES to install. Tacit-
+"    knowledge-density proxy, not customer-quality filter."
+""
+CONVERGENT RECOMMENDATION:
+  1. DO NOT use polygon as hard gate in Promise Maker.
+"  2. DO use as SOFT FEATURE in Allocation, DECOMPOSED:"
+     - hex-level SE (CAN proxy)
+     - hex-level attempt recency (WILL proxy + anti-staleness)
+     - Continuous score: hex_SE x recency_decay
+  3. Reserve ~10% of lead volume for sub-threshold hexes adjacent to
+     green — the exploration quota — to break the crimson ratchet.
+  4. Balancing metric: decline rate in exploration-quota hexes over
+"     time. Falls -> CAN was issue, intervention works. Flat -> WILL"
+"     was issue, gating wasn't the lever."
+""
+## 9c. Next-step tests queued (not yet executed)
+""
+test,purpose,effort
+T1: Mar-only inside/outside gap,Temporal holdout — does 16.7pp gap survive?,~30 min
+T2: Stratify Mar by prior-hex-attempts,Cleanest generalization test (Geoff),needs Jan-Feb attempt pull
+T3: Install rate of 62 no-polygon pairs,"Cold-start canary — if ~38% polygon does work, if ~55% it's experience correlate",~5 min
+T4: Regress ANC on hex install-density,Does depth gradient survive density controls? (Donna),~30 min
+""
+## 10. Caveats
+""
+Polygons are a Feb 2026 snapshot; cohort is Jan-Mar 2026. Mar pairs don't have their own installs reflected in the polygon.
+62 pairs (2.4%) have partners without polygons — newer / low-volume partners below the p30 hex-density threshold.
+2 pairs lack booking coords (serviceability CTE didn't resolve).
+A partner's polygon is a union of DBSCAN clusters; we pick one per pair via deepest-containing > nearest-edge tie-break.
