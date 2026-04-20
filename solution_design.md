@@ -180,47 +180,74 @@ These hold across all phases. Compromising them compromises the architecture.
 
 **Goal:** Ship signal. No customer-app changes. No new ML models. Zero PMBM dependency. One sprint.
 
-### 6.1 Problem 1 V0 — Rules-based trust bands
+### 6.1 Problem 1 V0 — Landmark-confirmation flow (REVISED)
 
-**What:** Tag every booking with a `location_trust_band ∈ {HIGH, MED, LOW}` at capture time, using only features that already exist in Snowflake.
+*Replaces an earlier 3-check classifier + graceful-degradation ladder after pushbacks from Maanas (pincode too coarse, 10-sec stream unnecessary friction for ~80% of captures, typed-address fallback re-introduces Problem 2's pathology) and agent validation from Geoff (require 2 confirmations; raise probe rate) and Donna (downstream propagation mandatory; polygons-only containment; instrument abandonment). The revision **collapses the earlier V0 [trust bands] + V1.2 [pre-commit re-capture loop] into one intervention** at higher Meadows leverage (LP5/LP6 vs the previous LP9+LP3).*
 
-**Rules:**
+**What:** Validate the captured GPS via the customer's own knowledge of their neighborhood — landmark confirmation — before the 25m gate, fee capture, or promise.
+
+**Flow (summary — full diagram in `solution_diagrams.md`):**
+
 ```
-Check A — partner cluster containment:
-  For each partner in the booking's allocation pool:
-    point-in-polygon(booking_lat_lng, partner_cluster_boundaries[partner])
-  a_score = fraction of partners for which the point is inside their cluster
+Customer submits home GPS
+    ↓
+Layered containment (POLYGONS ONLY):
+    ├─ Inside any partner cluster polygon? → LANDMARK_CONFIRM
+    ├─ Inside city envelope (convex hull of installs)? → LANDMARK_CONFIRM (edge-flagged)
+    └─ Neither? → LANDMARK_SPARSE
+    ↓
+LANDMARK_CONFIRM:
+    Google Address Descriptors API → 3-5 landmarks near captured coord
+    Customer: "Which of these is within 2-3 min walk of your HOME specifically?"
+    ↓
+    ├─ Confirms ≥2 distinct landmarks (Geoff's refinement)
+    │   AND did not confirm a false-probe (20-25% of slots)
+    │   → Proceed to 25m gate → Fee → Promise
+    │   → confirmed_landmarks_per_booking emits into Problem 2 packet ★
+    │                                          (Donna's non-negotiable)
+    │
+    ├─ Denies all → Round 2 with install-history-derived anchors (hyperlocal,
+    │              covers Google AD's gaps on Indian mandir / kirana / gali)
+    │              If still denies → "You're not at home. Please go home
+    │                                 and submit again."
+    │                             + CRE callback offered as PARALLEL path
+    │                             (not only post-failure) — mitigates
+    │                             abandonment-reinforcing-loop
+    │              Second attempt fails → CRE_callback_queue (no infinite loop)
+    │
+    └─ Confirms a false-probe → gaming_flag_stock → human review
 
-Check B — pincode reverse-geocode match:
-  geo_pincode = reverse_geocode(booking_lat_lng)   # pincode centroid table
-  b_score = 1 if geo_pincode == stated_pincode else 0
-
-Check C — nearest past install in stated pincode:
-  d = haversine(booking_lat_lng, nearest_past_install(pincode=stated_pincode))
-  c_score = 1 if d <= 500m else max(0, 1 - (d - 500) / 2000)
-
-trust_score = 0.4·a_score + 0.3·b_score + 0.3·c_score
-
-location_trust_band = HIGH if trust_score > 0.75 else
-                      MED  if trust_score > 0.40 else
-                      LOW
+LANDMARK_SPARSE: same flow, but confirmed landmarks route to
+  sparse_area_queue (Wiom expansion signal, density-gated:
+  ≥5 confirmations in 500m hex within 30 days before expansion review)
 ```
 
-**What it does with the band:**
+**Why this is the revised V0 (not V0.1 + V1.2 separately):**
 
-| Band | V0 action |
-|---|---|
-| HIGH | Nothing — proceed as today. |
-| MED | Log the flag. Add a feature column for downstream learning. No routing change in V0. |
-| LOW | Log the flag + add an asynchronous CRE callback queue (not blocking promise). |
+- The earlier design had a diagnostic-only V0 (trust bands, no action) and a structural V1.2 (pre-commit re-capture loop, Genie → customer-app contract). Donna flagged the risk: shipping V0 alone could cause the metric to move little, leadership concludes "trust layer doesn't work," and V1.2 never gets built.
+- The revision eliminates that risk because the interrogation and the action are a **single in-session loop**. The customer either confirms ≥2 landmarks (proceed) or denies and is asked to go home (action). No diagnostic-without-action phase.
 
-**Where the code lands:** new file `B/compute/trust_gateway_v0.py`. Called inline with the 25m gate. Writes `location_trust_band` into `booking_logs`.
+**PMBM coupling:** reads `partner_cluster_boundaries.h5` (polygons only, read-only) + install history for round-2 anchors. Does **NOT** read `B_spatial.predicted_field_hex` at the pre-promise gate — that coupling is reserved for the Problem 2 packet builder (post-promise, where coupling is fine). This preserves the "pre-promise gate is PMBM-independent" architectural commitment.
 
-**Thresholds (0.75 / 0.40):** calibrated in Sprint 0 using the already-pulled Stage B cohort (`promise_maker_gps/booking_install_distance/investigations/install_drift_raw.csv`). Target: 80% of installs with drift < p95 Stage A should be HIGH; 70% of installs with drift > Stage A p95 should be MED or LOW. Tune weights (0.4/0.3/0.3) to hit both.
+**Where the code lands:** new file `B/compute/landmark_gateway_v0.py`. Called inline, before the 25m gate. Writes `confirmed_landmarks_per_booking` and `containment_band` into `booking_logs`. The landmarks then flow downstream to `genie_context_manager`'s Problem 2 packet builder as the `customer_affirmed_landmarks` field.
 
-**What V0 does NOT do:** change the 25m gate, block promises, or notify the customer. Pure measurement + tagging. Classifier (in later phase) will replace the hand-weighted rule.
+**What V0 does NOT do:**
+- Does not change the 25m gate's mechanism (still distance-to-infrastructure; now operates on a validated coord)
+- Does not run a classifier (categorical outcomes: confirmed / denied / sparse / gamed — replaces continuous trust_score)
+- Does not use pincode reverse-geocode as a primary check (dropped per Maanas — Indian pincodes too coarse)
+- Does not use typed-address fallback (dropped — re-introduces Problem 2 pathology)
+- Does not force a 10-sec GPS stream by default (~80% of captures don't need it; retained only as deep-fallback for edge cases)
 
-**Why this is the right V0:** we already showed in the synthesis that the biggest structural leverage is the pre-commit re-capture loop (Innovation 1). But that requires a customer-app change. V0 ships *the measurement* that proves the problem, in a form the customer-app team can consume when they get to the UX change. Don't wait for the app team — tag, measure, publish.
+**Non-negotiables for shipping V0 (Donna's "decay is mandatory" analog):**
+1. `confirmed_landmarks_per_booking` MUST propagate to Problem 2 packet. If this field is empty at packet-build time, log as a P1→P2 pipeline failure.
+2. Containment reads **polygons only**. Don't let KDE sneak into the pre-promise gate.
+3. "Go home" event instrumented with abandonment tracker from day 1. If >8-10%, soften the message.
+
+**Dependencies:**
+- Google Address Descriptors API key + `landmark_anchor_cache` per hex (rolling 7-day, for outage resilience — fail-OPEN, never fail-closed)
+- Daily job: recompute `city_envelope` (convex hull of installs per city) — cheap, ~minutes
+- Wiom-app UX: two-round landmark-confirmation screen (can be built against a sandbox API before production)
+- `landmark_gateway_v0.py` service + `booking_logs` schema extension for `confirmed_landmarks_per_booking`
 
 ### 6.2 Problem 2 V0 — NER-augmented notification payload
 
@@ -416,24 +443,23 @@ By V3, the following artifacts we'll have built are all PMBM inputs:
 
 ---
 
-## 10. Meadows leverage ranking (Donna-validated)
+## 10. Meadows leverage ranking (Donna-validated, revised)
 
-Per Donna's systems review. The prize is the pre-commit re-capture loop; everything else is either diagnostic or recovery.
+Per the revised landmark-confirmation design: the earlier split between V0.1 (diagnostic trust layer, LP9) and V1.2 (structural re-capture loop, LP3/LP6) collapses into ONE intervention at LP5/LP6. Donna's assessment: the revision is a clean leverage jump.
 
 | # | Intervention | Meadows LP | Why | Cost |
 |---|---|:-:|---|:-:|
-| **V1.2** | **Pre-commit re-capture loop (Genie → customer app)** | **LP3 (structure) / LP6 (new info flow)** | Creates a feedback channel that doesn't exist today. Changes what Genie *is* (from internal learner to bidirectional agent). Bordering on LP2 (goal shift — Genie as truth-seeker, not scorer). | High |
+| **V0 (revised)** | **Landmark-confirmation flow (layered containment + 2-landmark confirm + sparse-queue + dual-purpose propagation)** | **LP5 (self-organizing) + LP6 (info flow); LP2/LP3 for the sparse-queue expansion signal** | Uses the system's own emergent structure (partner polygons, install hull) as containment. Introduces the customer's own neighborhood knowledge as a new information channel. One interaction validates P1 + enriches P2 packet simultaneously (dual-purpose). Sparse-queue routes capture-side evidence into a company-level expansion decision — LP2 territory. | Medium |
 | V3 | Full PMBM integration | **LP4 (rules)** | Rewrites scoring rules within existing stock structure. | Very high |
-| V0.3 | New cause codes (GPS_TRUST_FAILURE, ADDRESS_RESOLUTION_FAILURE) | **LP6 (information)** | Changes what H *can see*. Every downstream learner gets richer signal. | Low-medium |
-| V0.2 | 7-anchor address packet in D&A OS | **LP6 (info flow)** | New information surface for partner. Doesn't change structure. | Medium |
-| V2.1 | Temporal navigation anchor | **LP6 + LP5 (self-organization)** | System learns its own anchors from its own behavior — self-organizing neighborhood memory. | Medium |
-| V1.1 | Per-mobile jitter profile | **LP6 (info flow)** | Uses a stock we already have. Personalizes an existing constant (global p95). | Low |
-| V2.4 | Customer-side feedback on decline (structurally-different re-capture) | **LP6** if structured differently; **LP12** if "confirm inputs" | Depends entirely on form. Adversarial risk if wrong. | Medium |
-| V2.3 | Partner-side hex-reddening WITH decay | **LP5 (self-organization)** | Partner sees their own service map evolve; learns. **Decay is the guardrail.** | Medium |
-| V0.1 | 3-check trust layer (HIGH/MED/LOW) | **LP9 (parameters) alone; LP6 if coupled to V1.2** | Alone, a diagnostic. Coupled with re-capture, a control loop. | Low |
-| V2.5 | Gaming-detection sub-signal | **LP8 (balancing loop against adversary)** | Adds a B-loop against a reinforcing adversarial loop. | Medium |
+| V0.3 | New cause codes (GPS_TRUST_FAILURE, ADDRESS_RESOLUTION_FAILURE, LANDMARK_CONFIRM_FAILED, LANDMARK_PROBE_FAILED) | **LP6 (information)** | Changes what H can see. Every downstream learner gets richer signal. | Low-medium |
+| V0.2 | Address packet in D&A OS — 7 anchors + customer-affirmed landmarks from V0 | **LP6 (info flow)** | New information surface for partner. Restructures P2 flow (partner knows before calling). | Medium |
+| V2.1 | Temporal navigation anchor from coordination transcripts | **LP6 + LP5** | System learns its own anchors from its own behavior — self-organizing neighborhood memory. | Medium |
+| V1.1 | Per-mobile jitter profile (retained as plausibility prior) | **LP6 (info flow)** | Retained for gaming-detection + borderline-containment cases. Not the primary gate anymore. | Low |
+| V2.4 | Downstream loop — partner-decline → customer re-enters landmark flow with fresh evidence | **LP6** | Reuses V0 mechanism but with new trigger and framing. Not "confirm your inputs" (adversarial); "help us narrow down where the partner couldn't reach." | Medium |
+| V2.3 | Partner-side hex-reddening WITH time + evidence decay | **LP5** | Partner sees their own service map evolve. **Decay is mandatory.** Same family as Bayesian K=30 prior-poisoning risk. | Medium |
+| V2.5 | Gaming-detection sub-signal (false-probe 20-25% + jitter plausibility + install-history consistency) | **LP8 (balancing loop against adversary)** | Adds a B-loop against a reinforcing adversarial loop. Rotating probe style required (12-18 month refresh cycle). | Medium |
 
-**Key takeaway (Donna):** Eight of ten are PMBM-independent. The prize (V1.2) is structural; everything else is either diagnostic (V0.1 alone) or recovery (packet, hex-reddening). Ship V1.2 even if you have to build a thin V0.1 to justify it — because V1.2 is the loop closure that changes what the system *is*, not just how well it scores.
+**Key takeaway (revised):** the prior "don't ship V0.1 alone" discipline is **gone** — because V0.1 in its old form no longer exists. V0 is now an inherently structural intervention (LP5/LP6), not a diagnostic-without-action. Eight of nine remaining interventions are PMBM-independent; V3 is the explicit PMBM-coupled integration.
 
 ---
 
@@ -488,25 +514,25 @@ Per Geoff: cause-code rates are not performance metrics — they are health metr
 
 ---
 
-## 12. Phasing summary (Donna-sequenced, 8-week MVP)
+## 12. Phasing summary (revised, 8-week MVP)
 
-Donna's proposed sequence — dependency-ordered, PMBM-independent throughout:
+The revised landmark-confirmation design re-sequences the earlier plan. The V0.1+V1.2 split is gone — V0 is now the unified intervention.
 
 | Week | Deliverable | Why this order | Dep on PMBM? | Dep on Wiom app? |
 |---|---|---|:-:|:-:|
-| **1-2** | V1.1 (per-mobile jitter profile from `jitter_mobile_v4.csv`) + V0.1 (3-check trust layer, shadow mode) | Profile feeds the layer; layer emits a score nobody consumes yet. Zero downstream risk. | ❌ | ❌ |
-| **3-5** | **V1.2 (pre-commit re-capture loop)** — the structural unlock | Requires Wiom-app contract; *start negotiation in parallel with Week 1*. Launches the new Genie → customer-app outbound channel. | ❌ | ✓ (re-capture UI) |
-| **4** | V0.3 (new cause codes: GPS_TRUST_FAILURE, ADDRESS_RESOLUTION_FAILURE) | Cheap H-schema extension. **Ship BEFORE V1.2 goes live** so the loop's first failures are cause-coded correctly. | ❌ | ❌ |
-| **5-7** | V0.2 (7-anchor packet in D&A OS `genie_context_manager`) + V2.1 (temporal navigation anchor from coordination transcripts) | Lives in D&A OS, depends on Ryan's `/commit` contract. Can be built in parallel with V1.2. | ❌ | ❌ (partner-app only) |
-| **6** | V2.5 (gaming-detection sub-signal as trust-layer sibling) | Needs V0.1 live so gaming can be detected vs baseline trust. | ❌ | ❌ |
-| **8+** | V2.3 (hex-reddening with decay) + V2.4 (customer-decline re-capture, structurally-different form) | Partner and customer UX layers riding on top of trust + cause-code infra. Decay mandatory. | ❌ | ✓ (both apps) |
-| **Later** | V3 (PMBM integration — trust → shrinkage α(i), cause codes → B retrain) | When PMBM Phase 5-6 lands. Nothing in V0-V2 becomes obsolete. | ✓ | ❌ |
+| **0 (prep)** | Infrastructure: Google Address Descriptors API key + cache; `city_envelope` daily job (convex hull of installs); V0.3 cause-code schema extension in H | All downstream needs this. Cheap, pure-backend. | ❌ | ❌ |
+| **1-3** | **V0 (landmark-confirmation flow) — shadow mode backend** + V0.2 (packet builder in D&A OS `genie_context_manager` — wired to receive `confirmed_landmarks_per_booking`) + V1.1 (per-mobile jitter profile as plausibility prior) | Build the containment + anchor logic; emit to shadow columns; don't enforce yet. Wire the downstream propagation to packet builder from day 1 (Donna's non-negotiable). | ❌ | ❌ |
+| **3-5** | **V0 live — customer-app UX + enforcement.** Wiom-app change: two-round landmark-confirmation screen + "go home and submit again" flow + CRE callback as parallel path + abandonment instrumentation. Satyam architectural sign-off on new Genie → customer-app contract. | This is the structural unlock. Ship only when abandonment instrumentation is in place — the hidden risk is a reinforcing drop-off loop. | ❌ | ✓ (re-capture UI, landmark-confirmation screen) |
+| **5-7** | V2.1 (temporal navigation anchor from coordination transcripts — additional packet field) + V2.5 (gaming-detection sub-signal — mobile jitter plausibility + install-history neighborhood consistency layered over the false-probe signal) | Packet enrichment + gaming defense both depend on V0 being live. | ❌ | ❌ (partner-app side only) |
+| **8+** | V2.3 (hex-reddening with decay) + V2.4 (downstream loop: partner-decline → customer re-enters landmark flow with fresh evidence — same mechanism, different trigger + framing) | UX layers riding on V0's infrastructure. Decay mandatory (Donna's prior round). | ❌ | ✓ (both apps) |
+| **Later** | V3 (PMBM integration — cause codes → B_spatial retrain; trust artifacts → shrinkage α(i)) | When PMBM Phase 5-6 lands. Nothing in V0-V2 becomes obsolete. | ✓ | ❌ |
 
-### Sequencing guidance (revised post-Donna)
+### Sequencing guidance (revised)
 
-- **Do NOT ship V0.1 alone.** Donna's warning: if trust-layer ships without re-capture, the metric won't move much and leadership concludes "trust layer doesn't work" — then re-capture never gets built. **Either ship V0.1 + V1.2 together, OR frame V0.1 as explicit "Phase 1 of 2, scaffolding for the re-capture loop, not an intervention in itself."**
-- **Zero-app-change path (if Wiom app team is bottlenecked):** V0.1 + V0.2 + V0.3 — trust-band tagging, NER-augmented partner packet, cause-code extension. Three moves, pure-backend, measures the problem and gives partners better anchors without a single customer-app change. But *communicate internally as Phase 1 of 2* — don't let the metric underwhelm.
-- **Max-value single intervention (both agents unanimous):** V1.2 (pre-commit re-capture loop). Ship it.
+- **The "don't ship V0.1 alone" risk is gone.** The revised V0 (landmark-confirmation) is inherently structural — it interrogates + acts in the same in-session loop. There's no diagnostic-without-action phase.
+- **Zero-customer-app-change path (if Wiom app team is bottlenecked):** V0 backend shadow + V0.2 packet builder + V0.3 cause codes. Pure-backend. Measures landmark-confirmation quality on synthetic/sandbox data, gives partners better anchors, preserves momentum until app UX can catch up.
+- **Max-value single intervention (both agents unanimous):** the revised V0 itself. The flow IS the lever. Ship it.
+- **Three non-negotiables (Donna):** (1) `confirmed_landmarks_per_booking` propagates to Problem 2 packet as a first-class field; (2) containment reads polygons only (not KDE — preserves pre-promise PMBM-independence); (3) "go home" abandonment instrumented from day 1.
 
 ---
 
@@ -555,6 +581,107 @@ Per Donna's missing-loops audit — these are the loops the system *should have*
 8. **Notification-payload size bloat.** Packet has 7-8 anchors + photo/video. Needs app-side rendering prioritization — "strongest clue first" is not optional.
 9. **SAT-01 violation risk** — if `trust_score` leaks into Promise Packet, Satyam rejects. All scoring artifacts stay in `genie_context_manager`.
 10. **New Genie outbound contract for V1.2** (Genie → customer-app) doesn't exist in current architecture. Needs Satyam sign-off before V1.2 ships. Start negotiation in parallel with V0.
+11. **Landmark-quality prior poisoning** — a single bad partner experience at a landmark can deprecate it before sufficient data accumulates. Same family as Bayesian K=30. Mitigation is structural — see §14.5's quality-vs-confidence separation non-negotiable.
+
+---
+
+## 14.5 Landmark Validation Loop — empirical post-install signals
+
+Closes the learning loop on the revised V0 (landmark-confirmation flow). The confirmation flow *asserts* that customer-affirmed landmarks are valid anchors; this loop *measures* whether they actually functioned as navigation anchors in the field. Both Geoff and Donna validated the loop and contributed the specific refinements below.
+
+### Four signals
+
+**Signal A — Partner field GPS trail** *(Phase 2 — gated on telemetry)*
+- **Measures:** did the partner/technician reach the confirmed landmark? How far from it to the actual home?
+- **Refinement (Geoff):** stratify by partner-familiarity-with-pincode. Use only *non-local* partner trails (first-time-in-pincode) to score landmark quality — a local partner navigating their own way will register false-negatives; use geometric check (did the trail actually pass through the confirmed-landmark radius?) to filter to informative trails.
+- **Routing (Donna):** behavioral signal → `landmark_quality_per_hex` stock
+- **Firing:** at technician-at-door event, backfilled from full trail (~1-day latency; acceptable)
+- **Dependency:** partner-app GPS telemetry at install-attempt granularity. **Probably not collected today.** Gated on Coordination engine's telemetry spine.
+
+**Signal B — Call transcript landmark mining** *(Phase 1 — ships first, pipeline exists)*
+- **Measures:** in partner-customer calls, did the partner reference a landmark OTHER than the one upstream-confirmed? If yes → confirmed landmarks were insufficient.
+- **Refinement (Geoff):** normalize by partner baseline call-rate — a partner who calls on 30% of installs regardless isn't signal; a partner whose call-rate *drops specifically on packets-with-confirmed-landmarks* is the evidence.
+- **Routing (Donna):** linguistic signal → `packet_completeness_per_booking` stock (existing P2)
+- **Epistemology:** **negative-signal-only.** B can decrement quality; cannot increment. Absence of call is consistent with success but not proof of it.
+- **Firing:** when transcript classification runs (~24-48h of call)
+- **Dependency:** existing `../coordination/` pipeline. No new infra.
+
+**Signal C — Second-call escalation** *(Geoff — cheap, high-signal)*
+- **Measures:** installs where partner calls ≥2 times. Compounding failure — first call = landmarks insufficient; second call = even that clarification failed.
+- **Why it matters:** much stronger negative signal than first-call (noise floor lower — a second call is rarely spurious)
+- **Dependency:** same call-count data as B
+
+**Signal D — Time-to-door distribution from area-entry** *(Geoff — highest-value addition)*
+- **Measures:** partner GPS crossing into 500m radius of pincode centroid (or packet polygon) → technician-at-door event. Delta, aggregated across installs.
+- **Why D is ranked above A:** aggregate, doesn't require per-trail geometric analysis, doesn't depend on partner literally using the confirmed landmark. Directly measures the operational outcome the confirmation flow is meant to produce.
+- **Interpretation:** a good confirmation flow shifts the distribution *left* over time. Population-level proxy for packet quality.
+- **Dependency:** same partner-GPS telemetry as Signal A. Phase 2.
+
+### Causal factorization (Geoff)
+
+Each install is a `(landmark_L, partner_P)` observation. Over many installs, factor out:
+- Partner fixed effect (skill / area familiarity)
+- Landmark fixed effect (anchor quality)
+- Residual
+
+A landmark is "bad" only if its fixed effect is negative **after controlling for partner**. Requires repeat-use across partners to identify — install-history anchors make this feasible because they're reused by design.
+
+### New stocks (Donna)
+
+- `landmark_quality_per_hex` — hex-level, grain matches PMBM's spatial aggregation
+- `landmark_reliability_per_source` — source-level (Google-AD vs install-history-anchor vs customer-freeform) — shifts anchor-preference policy over time
+- `landmark_observation_count_per_(hex, source)` — for confidence weighting, needed to keep quality ≠ confidence
+
+### Qualifier on existing cause codes (Donna — not new codes)
+
+Don't multiply cause codes. Add a qualifier field:
+```
+confirmed_landmark_validation_failed ∈ {true, false, null}
+```
+decorates existing `GPS_TRUST_FAILURE` and `ADDRESS_RESOLUTION_FAILURE` codes. Avoids combinatorial explosion in the taxonomy.
+
+### Attribution routing — when signals disagree
+
+- Signal A (behavioral — what partner did) → `landmark_quality_per_hex`
+- Signal B (linguistic — what partner said) → `packet_completeness_per_booking`
+- **Behavior wins for outcome attribution; language wins for design feedback.**
+- Don't force conflicting signals into one number. They measure different stocks.
+
+### Non-negotiable (Donna — new invariant)
+
+**Separation of `quality` and `confidence` in the landmark stock is mandatory.** Alongside "decay is mandatory" (prior round) and "downstream propagation is mandatory" (from V0 design), this is the third structural invariant:
+
+```
+(quality_score, confidence_score, last_observed_timestamp)  ← per landmark, as a triplet
+```
+
+Collapsing quality and confidence into a single scalar allows the reinforcing loop to eat the balancing loop — popular landmarks get more preference, low-observation landmarks become indistinguishable from poor-quality ones, and the system stops exploring.
+
+### Decay + update discipline (Donna)
+
+- **90-day half-life** on landmark quality scores (slower than Bayesian K=30 customer-level; landmarks are more stable than individual signals)
+- **K_landmark ≥ 10** observation floor before a landmark's quality can influence anchor-preference policy
+- **Bounded per-observation update:** a single install-attempt outcome cannot shift `landmark_quality_per_hex` by more than X% toward the mean
+- **Measurement fast, policy slow:** signals update stock continuously (fast B-loop); CP surfaces policy changes at 30-day boundaries (aligned with PMBM cadence)
+
+### Meadows leverage (Donna)
+
+- **Primary: LP6 (information flow)** — creates a feedback channel that didn't exist. The system previously could not see whether its confirmed landmarks were navigationally usable.
+- **Secondary: LP4 (rules)** — anchor-preference rules shift based on empirical reliability. Downstream of LP6 — the rule change is enabled *because* the information now flows.
+
+### Triple-purpose dividend
+
+Each customer landmark-confirmation interaction now serves **three** balancing effects:
+1. Validates Problem 1 (upstream trust gate)
+2. Enriches Problem 2 packet (downstream partner context)
+3. **Validates the landmark asset itself** (feeds quality scoring that improves every future booking in that hex)
+
+P1 and P2 improve a *single* booking. P3's leverage scales superlinearly with hex density — each confirmed landmark that gets validated as usable makes the next customer's experience cleaner.
+
+### Sequencing
+
+- **Phase 1 (ships alongside V0):** Signal B + Signal C. Existing call-transcript pipeline. No new infra.
+- **Phase 2 (gated on partner-GPS telemetry):** Signal A + Signal D. Depends on Coordination engine's telemetry spine — probably not available today. Don't block V0 on this.
 
 ---
 

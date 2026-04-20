@@ -119,6 +119,46 @@ The sibling findings, placed on the flow:
 
 ---
 
+## Reframes — load-bearing architectural shifts
+
+Frame-level realignments that shaped the design. New reframes accumulate here; older ones aren't deleted — they become foundational. **Durable rule (Maanas, 2026-04-20): every reframe that emerges in a session must be captured in this README, not only in downstream synthesis docs.**
+
+1. **The promise is structurally premature.** (Geoff, Problem 1 RCA.) The real pain at Point A is not bad GPS — Stage A proved the apparatus is fine. The pain is that Wiom makes a promise on an input it has never interrogated. Genie's own founding principle says *"promise-making and promise-fulfillment are structurally separated."* Today they aren't, in spirit — the promise fires on pre-evidence.
+
+2. **Structural asymmetry — customer has gali knowledge Wiom never captured.** (Geoff, Problem 2 RCA.) The real pain at Point B is an upstream capture failure, not a partner-navigation failure. Every downstream intervention (photos, videos, voice calls) is compensating for the free-text-field post-payment capture design.
+
+3. **Address intelligence → place intelligence.** (Maanas, via AI conversation.) The system should not send a partner an address. It should send a verified, behaviorally grounded, partner-recognizable install location.
+
+4. **GNN runs pre-decision; decline-signal integration is a FEATURE, not a bug.** (Maanas, correcting an earlier misframe.) GNN computes ranking before any partner acts on a booking. Pricing decline risk *is* pricing install likelihood — not separable in production because production doesn't condition on accept. The conditional-accept diagnostic is a decomposition, not an operational comparison.
+
+5. **Dropdown (pre-assign, Allocation-stage) ≠ Transcript (post-assign, Coordination-stage).** (Maanas, distinction discipline.) Two different signal sources, two different funnel stages, two different conclusions. Don't conflate the decline-time click with the voice-call content.
+
+6. **Interrogate the customer, not the coord.** (This round — landmark-confirmation revision.) A technical trust-score classifier asks *"is this coord statistically reasonable?"* — system-talking-to-system. Landmark confirmation asks *"is the human who submitted this coord actually standing where they claim?"* — system-talking-to-human, the only entity with ground truth. Different question, different answer.
+
+7. **Every intervention must produce an impact signal flowing back, measured by users' actions positive or negative.** (Maanas, durable principle.) Without a measurable feedback channel tied to real user behavior, an intervention is a hope, not a design. Specific trackers (e.g. *"% calls where a different landmark was discussed"*, *"% times technician reached the confirmed landmark"*, *"% required return visits"*) need further articulation — but the **principle is non-negotiable.**
+
+---
+
+## Durable design principles (non-negotiables)
+
+Structural invariants that must survive every iteration. Breaking any of these breaks the architecture, not just a feature. Each originated from a specific agent round or pushback and is preserved here because the risk they guard against keeps re-emerging.
+
+1. **Decay is mandatory on every behavioral-reinforcement mechanism.** (Donna, first round.) Applies to hex-reddening, the already-in-system Bayesian shrinkage K=30, landmark quality scores — anything where a signal influences future routing. Without decay, a single bad day in a hex poisons priors indefinitely.
+
+2. **Downstream propagation is mandatory for dual-purpose interactions.** (Donna, landmark-confirmation round.) `confirmed_landmarks_per_booking` MUST flow into Problem 2 packet as a first-class field. If one customer interaction can validate upstream AND enrich downstream, it must do both — otherwise the customer did the work and only one stage benefits.
+
+3. **Separate `quality` from `confidence` in any quality-scored stock.** (Donna, validation-loop round.) Collapsing them into one scalar allows reinforcing loops to concentrate attention on popular items while leaving low-observation items indistinguishable from poor-quality ones. Always store as `(quality, confidence, last_observed)` triplet.
+
+4. **Every intervention produces an impact signal flowing back.** (Maanas, this round.) See Reframe #7 above. The articulation of specific trackers is pending; the principle itself is architecturally binding.
+
+5. **Scoring artifacts stay internal to Genie.** (Satyam, SAT-01.) Trust scores, gaming flags, classifier outputs never ride in Promise Packet. They are consumed by internal stocks (B/R/E/S) and by D&A OS's `genie_context_manager` for downstream enrichment.
+
+6. **The pre-promise gate is PMBM-independent.** (Donna, landmark-confirmation round.) Containment checks read polygons only, not KDE fields. KDE can enrich the Problem 2 packet post-promise, but must not couple to the gate.
+
+7. **Use NUT-linked outcome metrics as primary targets; proxy metrics only as operational health.** (Geoff, metrics round.) *"<5% structural drift"* or *"<1.3 calls/pair"* can be gamed — tighten the gate to reject everyone and drift drops while the business breaks. Primary targets: promise-to-install conversion rate at held promise volume (P1); first-visit-install rate + minutes-to-door (P2). Proxy metrics monitor operational health, not outcome.
+
+---
+
 ## Solution storyline — thinking contracts + end-to-end solutions
 
 ### Satyam's framing of the matchmaking decision surface
