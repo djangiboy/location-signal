@@ -30,16 +30,21 @@ Sub-folder STORY.csv + README files remain the source of truth for their respect
 
 ---
 
-## Solution frame (capability-level, built on the master story)
+## Solution frame + accountability docs (capability-level, built on the master story)
 
-Once the data backbone is in place, the solution frame names WHAT the system does at the capability and signal layer — not HOW any component is engineered.
+Once the data backbone is in place, the solution frame names WHAT the system does at the capability and signal layer — not HOW any component is engineered. The Gate 0 contracts (one per problem) and the L5 derivation memo sit alongside it.
 
 | File | What it is |
 |---|---|
-| [`solution_frame.md`](./solution_frame.md) | Capability-level frame for the cross-engine solution. Six-stage pipeline (Gate → Belief Model 1: can-we-service → Governance → Active Promise Exposure → Belief Model 2: best-partner → Immutable Memory), with a control pane running alongside. Capabilities grouped customer-facing (A) / promise-making (B) / partner-facing (C) / control-pane (D), each tagged with backend / frontend / content nature. Includes non-negotiable anchors, belief-model integrity argument (orthogonal workstreams: partner-signal is not corrupted by customer-side GPS noise — independently validated by master story B.1, B.2, C.A), leading + lagging signals, explicit out-of-scope block, open questions. |
-| [`possible_architecture.txt`](./possible_architecture.txt) | Raw-notes predecessor from Maanas. `solution_frame.md` is the articulated version. |
+| [`solution_frame_v6.md`](./solution_frame_v6.md) | **Current solution frame.** Two-confidence gates (User Address Confidence + Serviceability Confidence), sequential evaluation, phased rollout (Phase 1 polygon-only; Phase 2 BM1; Phase 3 BM2), payment mechanics with 48h auto-refund SLA, six feedback loops with decay declared, 42 body capabilities across four groups. Partner Integrity Channel scoped to Appendix C as a separate cross-OS workstream. Older frames (v1-v5) are archived in `older_artifacts/`. |
+| [`problem_statements/problem_1_location_estimation_v3.md`](./problem_statements/problem_1_location_estimation_v3.md) | **Gate 0 contract for Problem 1** (Location Estimation, Point A). Filled against Satyam's Gate 0 template. L5 target: install rate 40% → ≥49% (P1 + P2 joint). |
+| [`problem_statements/problem_2_address_translation_v3.md`](./problem_statements/problem_2_address_translation_v3.md) | **Gate 0 contract for Problem 2** (Address Translation, Point B). Same template. L5 target: install rate 40% → ≥49% (P1 + P2 joint). |
+| [`l5_target_derivation.md`](./l5_target_derivation.md) | **L5 attribution memo.** Derives the shared 40% → ≥49% target from master story lifts: P1 alone +7pp, P2 alone +4pp, joint overlap-adjusted +9pp. Explicitly excludes model activation (BM1/BM2) and partner expansion — those stack on top in separate contracts. |
+| [`implementation_plan_and_impact.md`](./implementation_plan_and_impact.md) | **Lean phase plan.** 4 phases, complexity rises across phases, no timelines yet. Phase 1 ships capture substrate + UI (both Leading indicators live). Phase 2 ships partner-facing + governance. Phase 3 ships learning pipelines (L5 joint target met). Phase 4 ships long-poles (BM2 + on-ground assist + post-install validation). |
+| [`possible_architecture.txt`](./possible_architecture.txt) | Raw-notes predecessor from Maanas. Retained for provenance. |
+| [`older_artifacts/`](./older_artifacts/) | Archive of earlier solution frames (v1-v5) and earlier Gate 0 contracts (v1, v2). Retained for audit trail. |
 
-**Principle:** the solution frame stays at capability level. Engineering mechanics (decay, confidence triplets, retry logic, state-machines, API shapes, layered-containment logic, cause-code taxonomy extension, temporal-anchor mining, gaming-score separation, w3w / pincode reverse-geocode / text-reverse-lookup internals) are explicitly out-of-scope in the frame and land at build time. Specific intervention triggers for control-pane signals (night-GPS divergence, partner visit nudges, customer-difficulty interventions, on-ground navigation assist) are designed once data flows.
+**Principle:** the solution frame stays at capability level. Engineering mechanics (decay half-lives, confidence triplet internals, state-machine transitions, API shapes, text-reverse-lookup internals) are explicitly out-of-scope in the frame and land at build time. Specific intervention triggers for control-pane signals (night-GPS divergence, partner visit nudges, customer-difficulty interventions, on-ground navigation assist) are designed once data flows.
 
 ---
 
@@ -203,21 +208,23 @@ Satyam's two guiding questions:
 
 The customer is the upstream source for Point A and the downstream validator for Point B. Same asset (location), two different quality questions — one about the *coord itself*, one about how that coord + its surrounding context *survives handoff* across Wiom → partner → customer.
 
-### Filed Gate 0 contracts
+### Filed Gate 0 contracts (current: v3)
 
 | # | Title | Decision point | Primary engine | File |
 |---|---|---|---|---|
-| 1 | Location Estimation | Point A — Wiom's promise | `promise_maker_gps/` | [`problem_statements/problem_1_location_estimation.md`](./problem_statements/problem_1_location_estimation.md) |
-| 2 | Address Translation for CSP | Point B — Partner's decision | `coordination/` | [`problem_statements/problem_2_address_translation.md`](./problem_statements/problem_2_address_translation.md) |
+| 1 | Location Estimation | Point A — Wiom's promise | `promise_maker_gps/` | [`problem_statements/problem_1_location_estimation_v3.md`](./problem_statements/problem_1_location_estimation_v3.md) |
+| 2 | Address Translation for CSP | Point B — Partner's decision | `coordination/` | [`problem_statements/problem_2_address_translation_v3.md`](./problem_statements/problem_2_address_translation_v3.md) |
+
+Earlier drafts (v1, v2) are archived at `older_artifacts/problem_statements/`.
 
 ### Solution substrate and synthesis
 
-Thinking contracts above are intentionally lean on design — the Gate 0 template is about the problem, not the solution. Solution content (Maanas's own notes, the Gate 0 HTML precedent report, Promise Maker system context, and my own critique/innovation layer) lives separately:
+The Gate 0 contracts stay lean — they define the problem, not the solution. Solution content lives in:
 
-- `possible_solutioning_approaches/Possible_Solutioning_Approaches.txt` — Maanas's own notes on the intervention design (PMBM, gating, feedback loops, place-intelligence reframe)
-- `possible_solutioning_approaches/wiom_location_address_gate0_report.html` — precedent-grounded Gate 0 submission (Swiggy / Dunzo / Pidge / Shiprocket / DTDC / India Post / Google Maps India playbooks)
-- `../../../promise_maker/` — the ML belief model these problems plug into (B_spatial with KDE fields, Bayesian shrinkage, PMBM, cause-coded self-learning)
-- `solution_synthesis.md` *(being assembled by `story_teller_part1`)* — my cross-engine synthesis, critique of Maanas's approach, and innovation proposals on top, grounded in the Promise Maker architecture
+- [`solution_frame_v6.md`](./solution_frame_v6.md) — current solution frame (successor to v1-v5, archived).
+- [`l5_target_derivation.md`](./l5_target_derivation.md) — bottom-up math for the shared L5 target.
+- [`implementation_plan_and_impact.md`](./implementation_plan_and_impact.md) — phase plan with cumulative-impact projections.
+- `../../../promise_maker/` — the ML belief model these problems plug into (B_spatial with KDE fields, Bayesian shrinkage, PMBM, cause-coded self-learning).
 
 ### Shared infrastructure across the two contracts
 
