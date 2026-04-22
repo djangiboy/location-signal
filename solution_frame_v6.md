@@ -495,7 +495,7 @@ Four groups. Total 42 body capabilities.
 | A11 | User Address Confidence Model v0 scorer storing triplet state | N | Quick | Q1 |
 | A12 | Customer transparency UI | N | Quick | Q1 |
 | A13 | Repeat-customer friction reduction | N | Medium | Q4 |
-| A14 | SR-OS queue for MID remediation — named SLA, volume ceiling, CP shock on breach | N | Quick | Q1 |
+| A14 | SR-OS queue for Gate 1 remediation (MID + LOW paths). MID: Street View + photo prompts + support call. LOW: AI/CS call script — (1) confirm customer is at home, (2) capture landmark/gali/floor via conversation, (3) capture post-call lat/long. Named SLA, volume ceiling, CP shock on breach. | N | Quick | Q1 |
 
 ### B. Gate 2 capabilities (Serviceability Confidence)
 

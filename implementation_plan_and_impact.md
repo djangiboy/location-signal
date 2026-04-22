@@ -62,7 +62,7 @@ Customer-side capture flow + scoring + transparency + escape hatches. Unlocks bo
 | A9 | Google Street View pull (customer-side) |
 | A11 | UAC v0 scorer storing triplet state |
 | A12 | Customer transparency UI |
-| A14 | SR-OS queue for MID remediation |
+| A14 | SR-OS queue for Gate 1 remediation — MID (Street View + photo prompts + support) and LOW (AI/CS call: confirm home, capture landmark/gali/floor, post-call coord) |
 | B2 | Promise / ask-partner / verify-visit / reject governance |
 | D6 | Customer-side difficulty signal monitor |
 | D9 | Customer outcome transparency loop |
