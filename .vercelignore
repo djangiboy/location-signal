@@ -1,0 +1,52 @@
+# Large data artefacts — not needed for walkthrough
+*.csv
+*.h5
+*.parquet
+*.ipynb
+investigative/
+**/investigative/
+investigations/
+**/investigations/
+audio_cache/
+**/audio_cache/
+
+# Python source / caches
+*.py
+*.pyc
+*.pyo
+__pycache__/
+**/__pycache__/
+db_connectors.py
+**/db_connectors.py
+
+# Markdown docs + raw text — Vercel serves them as raw source, not useful to stakeholders
+# (They are available in the git repo for anyone who wants them)
+*.md
+*.txt
+
+# Source documents
+*.pdf
+*.docx
+*.pptx
+
+# Archive
+older_artifacts/
+docs/
+
+# Editor / OS
+.claude/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
+.env.*
+*.pem
+*.key
+snowflake_keys/
+
+# Version control
+.git/
+.gitignore

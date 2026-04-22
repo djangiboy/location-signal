@@ -56,3 +56,4 @@ snowflake_keys/
 # into terminal output. Never commit.
 session_transcript_*.md
 **/session_transcript_*.md
+.vercel
