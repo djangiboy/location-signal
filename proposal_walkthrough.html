@@ -166,14 +166,14 @@ flowchart LR
     G1 -->|HIGH| G2{Gate 2<br/>Can we<br/>serve here?}
     G1 -->|MID| R1[Remediate:<br/>Street View<br/>photo · support]
     R1 --> G2
-    G1 -->|LOW| AFF{Customer<br/>voice affirms<br/>'haan mai yahi hu'?}
-    AFF -->|Yes| G2
-    AFF -->|No| REJ1[Reject]
-    G2 -->|HIGH| PAY((Take payment<br/>Commit promise))
+    G1 -->|LOW| CALL[AI/CS call:<br/>confirm at home?<br/>capture landmark/gali/floor<br/>post-call lat/long]
+    CALL -->|Confirmed home<br/>+ chain captured| G2
+    CALL -->|Not at home OR<br/>call incomplete| REJ1[Hard reject]
+    G2 -->|HIGH| PAY((Commit promise<br/>Take payment))
     G2 -->|MID| PAY
     G2 -->|LOW| REJ2[Reject<br/>no payment]
-    PAY --> P[Route to<br/>partner]
-    P --> D{Partner<br/>decides}
+    PAY -->|Ranking logic<br/>handed off| DAOS[DA OS<br/>routes to partner]
+    DAOS --> D{Partner<br/>decides}
     D -->|Accept| I[Install]
     D -->|Verify first| V[Paid visit]
     D -->|Decline| SHR[Polygon<br/>shrinks here]
@@ -182,11 +182,12 @@ flowchart LR
     SHR --> FB
     FB -.-> G1
     FB -.-> G2
-    FB -.-> P
+    FB -.-> PAY
     style PAY fill:#d4eccf,stroke:#1a6b1e
     style I fill:#d4eccf,stroke:#1a6b1e
     style G1 fill:#e8f0fe,stroke:#2563eb
     style G2 fill:#e8f0fe,stroke:#2563eb
+    style DAOS fill:#fbe9d9,stroke:#c7700d
     style FB fill:#fff0b3,stroke:#8a6a00
 </div>
 
@@ -231,7 +232,7 @@ flowchart LR
 <tr><th>Tier</th><th>What it means</th><th>What happens</th></tr>
 <tr><td><span class="pill pill-high">HIGH</span></td><td>≥2 landmarks confirmed, signals consistent, not at home unlikely</td><td>Pass to Gate 2, no friction</td></tr>
 <tr><td><span class="pill pill-mid">MID</span></td><td>Partial signal, or GPS noisy</td><td>Remediate via Street View, photo, or support call. Promote to HIGH → pass. If unrecovered → reject.</td></tr>
-<tr><td><span class="pill pill-low">LOW</span></td><td>No landmark relates, probe fail</td><td>Ask the customer to <strong>voice-affirm</strong> she is at home — she says something like <em>"haan mai yahi hu"</em> ("yes, I am here"). <strong>If she affirms</strong> — pass to Gate 2 on the strength of the voice confirmation (recording stored as evidence; voice carries richer signal than text — tone, hesitation, accent — and is harder to automate fraudulently). <strong>If she doesn't</strong> — reject. No payment captured either way until Gate 2 resolves.</td></tr>
+<tr><td><span class="pill pill-low">LOW</span></td><td>No landmark relates, probe fail</td><td>Engage an <strong>AI/CS call</strong> with the customer. On the call: (1) confirm "are you booking from home?" (2) if yes, capture landmark, gali, floor via the conversation and enter them into Wiom; (3) capture lat/long at call-end. <strong>If the customer is at home AND all three steps complete</strong> → pass to Gate 2. <strong>If the customer isn't at home</strong> → ask them to redo the location submission when home (<strong>hard reject</strong> on this booking). <strong>If the call doesn't complete the steps</strong> → hard reject. No payment captured either way until Gate 2 resolves.</td></tr>
 </table>
 
 <h3>Gate 2 — Serviceability Confidence</h3>
@@ -327,6 +328,10 @@ flowchart LR
     style JIT fill:#e8f0fe,stroke:#2563eb
     style TD fill:#e8f0fe,stroke:#2563eb
     style CUST fill:#e8f0fe,stroke:#2563eb
+</div>
+
+<div class="callout">
+<strong>Where routing actually happens.</strong> Genie doesn't notify partners directly. At Commit Promise, Genie hands off the ranking logic (which partner best fits this booking) to <strong>DA OS</strong>, which handles the actual partner notification cycle. Partner decisions return to Genie's Commit Promise stage — that's where the feedback loop closes and future ranking logic is updated. Everything in this section — polygons, landmark confidence, jitter profiles — are Genie-internal stocks informed by signals that enter at that boundary.
 </div>
 
 <p>Each stock has a declared decay: old decisions weigh less, a single bad day doesn't stain the mobile's jitter profile forever, a polygon that shrank in a hex can grow back on clean evidence. <strong>Nothing silently accumulates.</strong> And the source of each signal — customer or partner — sees the consequence visible back to them:</p>

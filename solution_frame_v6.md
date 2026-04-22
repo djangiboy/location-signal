@@ -60,7 +60,7 @@ Two models exist in Wiom's R&D but are not wired into production today. We will 
 
 ### 2.5 — Promise Maker as one organ inside a larger system
 
-Promise Maker is the commitment engine inside Genie (Wiom's matchmaking brain). Think of Genie as the component that decides whether to make a promise, and to which partner to route it. The technical internals (how Genie separates belief from governance from external events) are in Appendix A — the body of this document only needs the idea that Genie has structured stocks for belief, governance, active exposure, and external events.
+Promise Maker is the commitment engine inside Genie (Wiom's matchmaking brain). Think of Genie as the component that decides **whether** to make a promise and **with what ranking logic** partners should be routed for this booking — it does not notify partners itself. **DA OS** handles the actual partner notification cycle, using the ranking logic Genie hands off at Commit Promise time. Partner decisions flow back to Genie's Commit Promise stage, updating ranking logic for future promises. The technical internals (how Genie separates belief from governance from external events) are in Appendix A — the body of this document only needs the idea that Genie has structured stocks for belief, governance, active exposure, and external events.
 
 ### 2.6 — Phased rollout — simpler logic first, models later
 
@@ -189,7 +189,7 @@ The model is a function of four classes of signal:
 
 - **HIGH → pass to Gate 2.** No friction.
 - **MID → remedy.** Surface Google Street View of the area: *"is this your street?"* If yes, ask for photo/video from the nearest landmark to the home. If the video resolves → promote to HIGH → pass. If not, route to a CRE / AI verification call (see §5.5 for ownership). If that resolves → promote to HIGH. If not → reject.
-- **LOW → voice-affirmation or reject.** If no landmark relates and the customer insists she is at home, the app prompts her for a voice affirmation — a short spoken statement that she is at her home right now (e.g., *"haan mai yahi hu"* — "yes, I am here"). **If she affirms** → pass to Gate 2 on the strength of the voice confirmation (the recording is stored as evidence and becomes part of the booking's audit trail). Voice carries richer signal than text — tone, hesitation, accent — and is harder to automate fraudulently; it also removes literacy friction for users who would struggle to type. **If she declines to affirm or abandons** → reject; no payment. No payment is captured anywhere in the LOW path until Gate 2 resolves.
+- **LOW → AI/CS call remediation or hard reject.** If no landmark relates, the system engages an AI or CS agent on a call with the customer. The call performs three things in sequence: (1) confirm the customer is booking from home right now, (2) if yes, capture landmark / gali / floor via the conversation and enter them into the booking, (3) capture a fresh lat/long at call-end. **If all three complete AND the customer confirms she is at home** → pass to Gate 2 on the strength of the call-captured chain + fresh coord. **If the customer reports she is not at home** → ask her to redo the location submission when home (hard reject on this booking). **If the call does not complete the three steps** → hard reject. No payment captured anywhere in the LOW path until Gate 2 resolves.
 
 ### 5.4 — The customer is an active participant, not a passive signal
 
