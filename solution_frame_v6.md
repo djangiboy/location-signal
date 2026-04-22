@@ -189,7 +189,7 @@ The model is a function of four classes of signal:
 
 - **HIGH → pass to Gate 2.** No friction.
 - **MID → remedy.** Surface Google Street View of the area: *"is this your street?"* If yes, ask for photo/video from the nearest landmark to the home. If the video resolves → promote to HIGH → pass. If not, route to a CRE / AI verification call (see §5.5 for ownership). If that resolves → promote to HIGH. If not → reject.
-- **LOW → text-affirmation or reject.** If no landmark relates and the customer insists she is at home, the app prompts her for a text affirmation — a typed statement that she is at her home right now. **If she affirms** → pass to Gate 2 on the strength of the written confirmation (the affirmation is stored as evidence and becomes part of the booking's audit trail). **If she declines to affirm or abandons** → reject; no payment. No payment is captured anywhere in the LOW path until Gate 2 resolves.
+- **LOW → voice-affirmation or reject.** If no landmark relates and the customer insists she is at home, the app prompts her for a voice affirmation — a short spoken statement that she is at her home right now (e.g., *"haan mai yahi hu"* — "yes, I am here"). **If she affirms** → pass to Gate 2 on the strength of the voice confirmation (the recording is stored as evidence and becomes part of the booking's audit trail). Voice carries richer signal than text — tone, hesitation, accent — and is harder to automate fraudulently; it also removes literacy friction for users who would struggle to type. **If she declines to affirm or abandons** → reject; no payment. No payment is captured anywhere in the LOW path until Gate 2 resolves.
 
 ### 5.4 — The customer is an active participant, not a passive signal
 

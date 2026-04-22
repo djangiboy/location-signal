@@ -166,7 +166,7 @@ flowchart LR
     G1 -->|HIGH| G2{Gate 2<br/>Can we<br/>serve here?}
     G1 -->|MID| R1[Remediate:<br/>Street View<br/>photo · support]
     R1 --> G2
-    G1 -->|LOW| AFF{Customer<br/>text affirms<br/>'I am at home'?}
+    G1 -->|LOW| AFF{Customer<br/>voice affirms<br/>'haan mai yahi hu'?}
     AFF -->|Yes| G2
     AFF -->|No| REJ1[Reject]
     G2 -->|HIGH| PAY((Take payment<br/>Commit promise))
@@ -231,7 +231,7 @@ flowchart LR
 <tr><th>Tier</th><th>What it means</th><th>What happens</th></tr>
 <tr><td><span class="pill pill-high">HIGH</span></td><td>≥2 landmarks confirmed, signals consistent, not at home unlikely</td><td>Pass to Gate 2, no friction</td></tr>
 <tr><td><span class="pill pill-mid">MID</span></td><td>Partial signal, or GPS noisy</td><td>Remediate via Street View, photo, or support call. Promote to HIGH → pass. If unrecovered → reject.</td></tr>
-<tr><td><span class="pill pill-low">LOW</span></td><td>No landmark relates, probe fail</td><td>Ask the customer to text-affirm she is at home. <strong>If she affirms</strong> — pass to Gate 2 on the strength of her written confirmation (affirmation stored as evidence). <strong>If she doesn't</strong> — reject. No payment captured either way until Gate 2 resolves.</td></tr>
+<tr><td><span class="pill pill-low">LOW</span></td><td>No landmark relates, probe fail</td><td>Ask the customer to <strong>voice-affirm</strong> she is at home — she says something like <em>"haan mai yahi hu"</em> ("yes, I am here"). <strong>If she affirms</strong> — pass to Gate 2 on the strength of the voice confirmation (recording stored as evidence; voice carries richer signal than text — tone, hesitation, accent — and is harder to automate fraudulently). <strong>If she doesn't</strong> — reject. No payment captured either way until Gate 2 resolves.</td></tr>
 </table>
 
 <h3>Gate 2 — Serviceability Confidence</h3>
