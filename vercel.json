@@ -1,0 +1,11 @@
+{
+  "redirects": [
+    { "source": "/", "destination": "/proposal_walkthrough.html", "permanent": false }
+  ],
+  "headers": [
+    {
+      "source": "/assets/(.*)",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=86400" }]
+    }
+  ]
+}

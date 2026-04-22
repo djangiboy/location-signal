@@ -99,7 +99,7 @@ Multi-input feedback loops close. Full P1 contribution lands. Belief stocks comp
 | A8 | Per-mobile jitter-handling path with recovery |
 | A10 | NER parsing for fallback text |
 | A13 | Repeat-customer friction reduction |
-| B1 | BM1 activation — polygon-only containment + tier enrichment |
+| B1 | BM1 activation at the gate — polygon-only containment |
 | B4 | Technician / team GPS ingestion |
 | B5 | Landmark-grounded serviceability |
 | B8 | Paid verify-visit flow with bonus < HIGH steady-state |

@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Location Signal — What the Proposal Changes</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --text: #1a1a1a;
+    --muted: #666;
+    --border: #e3e3e3;
+    --accent: #2563eb;
+    --bg-soft: #f6f7f9;
+    --bg-callout: #eff4fb;
+    --green: #d4eccf;
+    --green-d: #1a6b1e;
+    --amber: #fff0b3;
+    --amber-d: #8a6a00;
+    --red: #ffd4d1;
+    --red-d: #a12d21;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+    color: var(--text);
+    line-height: 1.65;
+    font-size: 16px;
+  }
+  header h1 {
+    font-size: 2rem;
+    margin-bottom: 0.25rem;
+    border-bottom: 3px solid var(--text);
+    padding-bottom: 0.6rem;
+  }
+  .lead {
+    font-size: 1.08rem;
+    color: var(--muted);
+    margin: 0.8rem 0 2rem;
+  }
+  h2 {
+    font-size: 1.45rem;
+    margin-top: 3.2rem;
+    margin-bottom: 0.4rem;
+    padding-top: 1.2rem;
+    border-top: 1px solid var(--border);
+  }
+  h3 {
+    font-size: 1.08rem;
+    margin-top: 1.8rem;
+    margin-bottom: 0.4rem;
+    color: #333;
+  }
+  p { margin: 0.8rem 0; }
+  ul { margin: 0.6rem 0; padding-left: 1.4rem; }
+  li { margin: 0.3rem 0; }
+  .callout {
+    background: var(--bg-callout);
+    border-left: 4px solid var(--accent);
+    padding: 14px 20px;
+    margin: 20px 0;
+    border-radius: 4px;
+  }
+  .callout strong { color: #1e4090; }
+  .mermaid {
+    text-align: center;
+    margin: 1.8rem 0;
+    background: var(--bg-soft);
+    padding: 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1rem 0;
+    font-size: 0.95rem;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  th { background: var(--bg-soft); font-weight: 600; }
+  .pill {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 11px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+  }
+  .pill-high { background: var(--green); color: var(--green-d); }
+  .pill-mid { background: var(--amber); color: var(--amber-d); }
+  .pill-low { background: var(--red); color: var(--red-d); }
+  iframe {
+    width: 100%;
+    height: 620px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-top: 0.6rem;
+  }
+  .footnote {
+    font-size: 0.9rem;
+    color: var(--muted);
+    margin-top: 0.6rem;
+  }
+  code {
+    background: var(--bg-soft);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 0.92em;
+  }
+  footer {
+    margin-top: 4rem;
+    padding-top: 1.4rem;
+    border-top: 1px solid var(--border);
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Location Signal — What the Proposal Changes</h1>
+  <p class="lead">A visual walkthrough of what Wiom's system will do after the build. Focused on <em>what</em> the system does, not how it's engineered. Companion to <code>solution_frame_v6.md</code> and the two Gate 0 contracts.</p>
+</header>
+
+<section>
+<h2>§0 — Why this proposal exists</h2>
+
+<p>Two customer complaints land on Wiom's doorstep every week:</p>
+
+<blockquote style="border-left: 3px solid #bbb; padding-left: 16px; margin: 1rem 0; color: #444;">
+<em>"Mujhe WiFi chahiye but Wiom mana kar raha hai."</em> <span style="color: #888;">(I want WiFi but Wiom is refusing me.)</span><br>
+<em>"Mera connection aaj lagna tha, but koi lagane nahi aaya."</em> <span style="color: #888;">(My connection was supposed to install today, but nobody came.)</span>
+</blockquote>
+
+<p>Behind these two complaints sit two decisions Wiom gets structurally wrong today:</p>
+<ul>
+  <li><strong>Point A — Wiom's promise decision.</strong> Wiom commits on one un-interrogated GPS tap. <strong>25.7%</strong> of installed bookings drift beyond GPS apparatus noise — the coord Wiom commits on often isn't the customer's home.</li>
+  <li><strong>Point B — the partner's install decision.</strong> The partner receives an unstructured text address and has to rebuild the landmark → gali → floor chain on a voice call. <strong>40.7%</strong> of classifiable partner-customer pairs have a first call just about location. <strong>77.5%</strong> of those calls still end in confusion.</li>
+</ul>
+
+<p>Serviceability shapes the ceiling. <strong>55.3%</strong> of bookings inside a partner's serviceable polygon install; <strong>38.6%</strong> outside. The partner's familiarity with an area governs whether install succeeds.</p>
+
+<div class="callout">
+<strong>What the build targets.</strong> Booking → install rate of <strong>40% → ≥49%</strong>, jointly contributed by the two workstreams in this proposal (clean capture + structured address). Model activation (BM1/BM2) and partner expansion stack beyond that — tracked separately. Full derivation in <code>l5_target_derivation.md</code>.
+</div>
+
+<p>This walkthrough describes what the system will do after the build. Companion reads: <code>solution_frame_v6.md</code> (mental model) · <code>problem_statements/problem_1_location_estimation_v3.md</code> and <code>problem_2_address_translation_v3.md</code> (Gate 0 contracts) · <code>master_story.md</code> (evidence backbone).</p>
+</section>
+
+<section>
+<h2>§1 — The frame in one picture</h2>
+
+<p>Two decisions before committing. One feedback path from every install.</p>
+
+<div class="mermaid">
+flowchart LR
+    C[Customer<br/>opens app] --> G1{Gate 1<br/>Is this<br/>really home?}
+    G1 -->|HIGH| G2{Gate 2<br/>Can we<br/>serve here?}
+    G1 -->|MID| R1[Remediate:<br/>Street View<br/>photo · support]
+    R1 --> G2
+    G1 -->|LOW| AFF{Customer<br/>text affirms<br/>'I am at home'?}
+    AFF -->|Yes| G2
+    AFF -->|No| REJ1[Reject]
+    G2 -->|HIGH| PAY((Take payment<br/>Commit promise))
+    G2 -->|MID| PAY
+    G2 -->|LOW| REJ2[Reject<br/>no payment]
+    PAY --> P[Route to<br/>partner]
+    P --> D{Partner<br/>decides}
+    D -->|Accept| I[Install]
+    D -->|Verify first| V[Paid visit]
+    D -->|Decline| SHR[Polygon<br/>shrinks here]
+    V --> I
+    I --> FB(((Feedback)))
+    SHR --> FB
+    FB -.-> G1
+    FB -.-> G2
+    FB -.-> P
+    style PAY fill:#d4eccf,stroke:#1a6b1e
+    style I fill:#d4eccf,stroke:#1a6b1e
+    style G1 fill:#e8f0fe,stroke:#2563eb
+    style G2 fill:#e8f0fe,stroke:#2563eb
+    style FB fill:#fff0b3,stroke:#8a6a00
+</div>
+
+<div class="callout">
+<strong>The shift.</strong> Today the promise fires on one unverified GPS tap and payment is taken immediately. After the build, the promise only fires once both <em>"is this really home?"</em> and <em>"can we serve here?"</em> are confident. Payment is the intent-lock. Every install, decline, or verification feeds back into the next booking's decision.
+</div>
+</section>
+
+<section>
+<h2>§2 — How inputs get captured</h2>
+
+<h3>What the customer does</h3>
+<p>Instead of one GPS tap + "yes I'm at home", the app asks for structure the customer already has in her head:</p>
+<ul>
+  <li><strong>Pick at least 2 landmarks near home</strong> from a nearby list — mandir, kirana, metro, chowk, school — whatever is within 2-3 minutes' walk.</li>
+  <li><strong>Type gali name and floor</strong> as structured fields — not a single free-text blob.</li>
+  <li><strong>Optional photo or short video</strong> from the landmark to the door, for tighter confirmation when needed.</li>
+</ul>
+<p>If no landmark fits ("I don't recognise any of these"), the app tries a different set — Wiom's own install-history landmarks — before falling back to a support call.</p>
+
+<h3>What the partner sees</h3>
+<p>Today the partner sees a map pin + a blob of typed address. After the build, he sees:</p>
+<ul>
+  <li><strong>Customer-confirmed landmark</strong> — the actual one she picked.</li>
+  <li><strong>Gali and floor as separate, structured fields.</strong></li>
+  <li><strong>Each landmark flagged against his own history</strong> — installed-near-before (<em>inclusion</em>), declined-near-before (<em>exclusion</em>), or new to him.</li>
+  <li><strong>Reference to his own recent installs:</strong> <em>"Between Install I882 (Shiv Mandir side, 5 days ago) and I891 (E-Block main road, 2 days ago)."</em></li>
+  <li><strong>Consequence of declining, shown upfront:</strong> the landmarks around this booking move to his exclusion list — his polygon shrinks in this area.</li>
+</ul>
+
+<div class="callout">
+<strong>Landmarks are anchors, not labels.</strong> The same landmarks that anchor the customer's home truth also travel to the partner as navigable reference points. Each partner accumulates an inclusion list (landmarks he's installed near) and an exclusion list (landmarks he's declined near). When shown a new booking, he instantly sees which landmarks are familiar, which he's declined before, and which are new territory. Captured once, consumed twice.
+</div>
+</section>
+
+<section>
+<h2>§3 — How the system determines confidence</h2>
+
+<h3>Gate 1 — User Address Confidence</h3>
+<p>Answers: <em>is the customer telling the truth about where her home is?</em> Computed from what she does in the app: number of landmarks confirmed, whether she picked any gaming-defence probes, GPS stream stability during booking, and night-time GPS cluster consistency over subsequent days.</p>
+<table>
+<tr><th>Tier</th><th>What it means</th><th>What happens</th></tr>
+<tr><td><span class="pill pill-high">HIGH</span></td><td>≥2 landmarks confirmed, signals consistent, not at home unlikely</td><td>Pass to Gate 2, no friction</td></tr>
+<tr><td><span class="pill pill-mid">MID</span></td><td>Partial signal, or GPS noisy</td><td>Remediate via Street View, photo, or support call. Promote to HIGH → pass. If unrecovered → reject.</td></tr>
+<tr><td><span class="pill pill-low">LOW</span></td><td>No landmark relates, probe fail</td><td>Ask the customer to text-affirm she is at home. <strong>If she affirms</strong> — pass to Gate 2 on the strength of her written confirmation (affirmation stored as evidence). <strong>If she doesn't</strong> — reject. No payment captured either way until Gate 2 resolves.</td></tr>
+</table>
+
+<h3>Gate 2 — Serviceability Confidence</h3>
+<p>Answers: <em>can a partner actually serve this location?</em> Computed from the partner's own serviceable polygon (drawn from his install + decline history), how dense his installs are around this booking, whether his team's recent movement touches the area, and whether the confirmed landmarks feature in his past installs.</p>
+<table>
+<tr><th>Tier</th><th>What it means</th><th>What happens</th></tr>
+<tr><td><span class="pill pill-high">HIGH</span></td><td>Inside a partner's dense polygon, landmarks match his install history</td><td>Partner is expected to install. Decline requires him to confirm against a visible consequence — polygon shrinks here.</td></tr>
+<tr><td><span class="pill pill-mid">MID</span></td><td>Edge of polygon — landmarks recognised but partner not yet dense</td><td>Ask the partner: <strong>accept</strong>, <strong>decline</strong>, or <strong>verify first with a paid visit</strong>. Each option's consequence to his polygon is shown before he confirms.</td></tr>
+<tr><td><span class="pill pill-low">LOW</span></td><td>Outside anyone's serviceable polygon</td><td><strong>Reject — no payment.</strong> Booking is recorded to an internal expansion-demand stock (a data signal that informs future partner expansion); customer notified if coverage reaches her later.</td></tr>
+</table>
+
+<div class="callout">
+<strong>Sequential, not parallel.</strong> Gate 2 only runs once Gate 1 confirms the coord is a real home. There's no point asking "can a partner serve this?" if we aren't sure it's actually her home.
+</div>
+
+<div class="callout">
+<strong>Gate 2 logic and partner routing evolve over time.</strong>
+<ul style="margin-top: 8px;">
+  <li><strong>Gate 2 tier decision</strong> — Phase 1 ships polygon-only containment (is the booking inside any partner's polygon?). A belief model (<strong>BM1</strong>) then enriches the tier decision with partner-history signals the polygon alone doesn't capture — pricing install density, recency, and landmark-partner match into a richer HIGH / MID / LOW verdict.</li>
+  <li><strong>Route-to-partner</strong> — initially rule-based among eligible partners. An allocation ranking model (<strong>BM2</strong>) then learns from every accept / decline / install / cancel edge to rank partners more accurately over time.</li>
+</ul>
+The user-facing flow stays the same — HIGH / MID / LOW with the same action tree. Only the sophistication of <em>how</em> the tier is computed and <em>which</em> partner gets notified first evolves.
+</div>
+</section>
+
+<section>
+<h2>§4 — How the system values partner signals</h2>
+
+<p>Every partner decision <strong>informs the polygon</strong>. The outcome maps directly onto whether the polygon expands or shrinks in that hex, and onto whether the booking's landmarks move to the partner's inclusion or exclusion list:</p>
+
+<ul>
+  <li><strong>Post install</strong> (HIGH booking accepted, technician installs) → polygon expands in this hex. Booking's landmarks added to partner's <em>inclusion list</em>. No verification needed — the install is the evidence.</li>
+  <li><strong>Post verify-visit at the margin</strong> (MID booking, partner picked "Verify first"):
+    <ul>
+      <li>Reached door + install binds → polygon expands. Landmarks move to inclusion list.</li>
+      <li>Couldn't reach / install failed → polygon shrinks. Landmarks move to exclusion list.</li>
+    </ul>
+  </li>
+  <li><strong>Post decline without verification</strong> (HIGH or MID decline) → polygon shrinks, softer than a verify-visit failure (the partner declined without testing). Consequence shown <strong>before</strong> he confirms the decline.</li>
+</ul>
+
+<h3>How polygons grow and shrink</h3>
+<div class="mermaid">
+flowchart LR
+    HIGH_I[HIGH booking<br/>→ partner installs] --> GROW[Polygon grows<br/>in this hex]
+    VER_S[MID booking<br/>→ verify-visit succeeds] --> GROW
+    HIGH_D[HIGH booking<br/>→ partner declines] --> SHRINK[Polygon shrinks<br/>in this hex]
+    VER_F[MID booking<br/>→ verify-visit fails] --> SHRINK
+    MID_D[MID booking<br/>→ partner declines] --> SHRINK_S[Polygon shrinks<br/>softly]
+    style GROW fill:#d4eccf,stroke:#1a6b1e
+    style SHRINK fill:#ffd4d1,stroke:#a12d21
+    style SHRINK_S fill:#fff0b3,stroke:#8a6a00
+</div>
+
+<h3>The verify-visit arc (MID tier)</h3>
+<p>When a partner picks <strong>Verify first</strong> on a MID booking, Wiom pays him to dispatch a technician. The outcome feeds back straight into his polygon at the <strong>margin</strong> of his known area.</p>
+
+<div class="mermaid">
+flowchart TB
+    START[Partner sees MID booking<br/>Picks 'Verify first'] --> DISP[Technician dispatched<br/>Same pipeline as install]
+    DISP --> OUT{On-ground outcome}
+    OUT -->|Reached door,<br/>install binds| WIN[Polygon grows here<br/>Landmark confidence rises<br/>Full bonus credited]
+    OUT -->|Couldn't reach<br/>or install failed| LOSS[Polygon shrinks softly<br/>Landmark loses confidence<br/>Consolation fee credited]
+    WIN --> NEXT1[Next booking in this hex<br/>routes to this partner as HIGH]
+    LOSS --> NEXT2[Next booking routes to<br/>a different partner]
+    style WIN fill:#d4eccf,stroke:#1a6b1e
+    style LOSS fill:#ffd4d1,stroke:#a12d21
+    style DISP fill:#e8f0fe,stroke:#2563eb
+</div>
+
+<div class="callout">
+<strong>Wiom pays for the evidence; the evidence is recorded; the partner sees what the evidence changed.</strong> Regular HIGH installs grow the polygon organically. Verify-visits specifically grow it at the margin — where HIGH-tier confidence doesn't exist yet. A partner who does the work and still can't reach the door is treated differently from a partner who simply declined.
+</div>
+</section>
+
+<section>
+<h2>§5 — How feedback flows back to the system</h2>
+
+<p>Every install, decline, or verify-visit leaves traces that update specific stocks in the system. Six feedback paths close the loop:</p>
+
+<div class="mermaid">
+flowchart LR
+    INST[Install outcome] --> LMC[Landmark confidence<br/>per neighbourhood]
+    INST --> POLY[Partner polygon shape]
+    DECL[Partner decline/accept] --> POLY
+    DECL --> GNN[Allocation ranking model]
+    GPS[Night-time GPS cluster] --> JIT[Mobile jitter profile]
+    TECH[Technician field GPS trails] --> TD[Team visitation density]
+    OUT[Booking outcome & transparency] --> CUST[Customer trust<br/>for next booking]
+    style LMC fill:#e8f0fe,stroke:#2563eb
+    style POLY fill:#e8f0fe,stroke:#2563eb
+    style GNN fill:#e8f0fe,stroke:#2563eb
+    style JIT fill:#e8f0fe,stroke:#2563eb
+    style TD fill:#e8f0fe,stroke:#2563eb
+    style CUST fill:#e8f0fe,stroke:#2563eb
+</div>
+
+<p>Each stock has a declared decay: old decisions weigh less, a single bad day doesn't stain the mobile's jitter profile forever, a polygon that shrank in a hex can grow back on clean evidence. <strong>Nothing silently accumulates.</strong> And the source of each signal — customer or partner — sees the consequence visible back to them:</p>
+<ul>
+  <li>Customer whose landmark validated sees acknowledgment after install: <em>"The partner reached your home using the Shiv Mandir landmark you confirmed."</em></li>
+  <li>Partner sees red zones in his app where his declines have reshaped his polygon — <strong>before</strong> he takes his next decision, not after.</li>
+  <li>Customer sees honest messaging at every outcome: HIGH / MID-with-SLA / LOW rejection, expansion-queue status.</li>
+</ul>
+</section>
+
+<section>
+<h2>§6 — Partner zones (what serviceable polygons look like today)</h2>
+
+<p>Each partner has a serviceable polygon drawn from their own install and decline history. <strong>Inside the polygon, install rates are 55.3%; outside, they collapse to 38.6%</strong> (master story Part C.D). The build makes these polygons <strong>live inputs to Gate 2</strong> and <strong>visible to the partner</strong> — with shrink/grow consequences shown before every accept/decline/verify decision.</p>
+
+<p class="footnote"><strong>The map below</strong> shows actual partner serviceable polygons generated from Wiom's install history, auto-focused on Delhi. Each coloured region is one partner's area of service. <em>(If the map appears centered on NCR instead of Delhi, your browser blocked the auto-pan for local files — zoom into the upper portion manually. Auto-pan works when the page is served over HTTP or opened in Firefox.)</em></p>
+
+<iframe id="partner-zones-map" src="assets/partner_zones_map.html" title="Partner serviceable polygons (focused on Delhi)"></iframe>
+
+<script>
+(function focusMapOnDelhi() {
+  const iframe = document.getElementById('partner-zones-map');
+  if (!iframe) return;
+  iframe.addEventListener('load', function () {
+    try {
+      const iw = iframe.contentWindow;
+      // Folium names the leaflet map object as map_<hash>. Enumerate to find it.
+      for (const key in iw) {
+        if (key.indexOf('map_') === 0 && iw[key] && typeof iw[key].setView === 'function') {
+          // Center on Delhi, zoom level 11 — shows city with neighbouring areas visible
+          iw[key].setView([28.6139, 77.2090], 11);
+          break;
+        }
+      }
+    } catch (e) {
+      // Cross-origin (Chrome local file://) — silently fall back; footnote advises manual zoom
+    }
+  });
+})();
+</script>
+
+<div class="callout">
+<strong>What changes after the build.</strong> Today these polygons are R&D artefacts — the production gate doesn't consult them. After Phase 1, they become the eligibility gate at Gate 2. After Phase 2, partners see their own polygon and its growth/shrink history live in their app. After Phase 3, every accept / decline / verify-visit redraws the polygon with decay, so the shape stays fresh.
+</div>
+</section>
+
+<section>
+<h2>§7 — Cumulative impact</h2>
+
+<p>Booking → install rate at held promise volume. Baseline <strong>40%</strong>.</p>
+
+<table>
+<tr><th>After phase</th><th>L5</th><th>Delta</th><th>What lands</th></tr>
+<tr><td>Baseline (today)</td><td><strong>40%</strong></td><td>—</td><td>One-fix GPS, blob address, R&D models idle</td></tr>
+<tr><td>Phase 1 — Capture substrate + UI</td><td>~41%</td><td>+1pp</td><td>Both Leading metrics trackable. Customer gets a second chance pre-payment.</td></tr>
+<tr><td>Phase 2 — Partner-facing + governance</td><td><strong>~45%</strong></td><td>+4pp</td><td>Structured packet flowing to partners. Most of P2 contribution lands.</td></tr>
+<tr><td>Phase 3 — Learning pipelines</td><td><strong>~49%</strong></td><td>+4pp</td><td>P1 contribution closes. Feedback loops compounding. <strong>L5 joint target met.</strong></td></tr>
+<tr><td>Phase 4 — Long-poles</td><td>~51-52%</td><td>+2-3pp</td><td>Model-activation lift begins.</td></tr>
+</table>
+
+<p class="footnote">Beyond Phase 4 — full BM1/BM2 activation + partner expansion — the system targets 55-58%. Those lifts belong to separate contracts. Full derivation in <code>l5_target_derivation.md</code>.</p>
+</section>
+
+<footer>
+<p>Reference docs in this folder: <code>solution_frame_v6.md</code> · <code>problem_statements/problem_1_location_estimation_v3.md</code> · <code>problem_statements/problem_2_address_translation_v3.md</code> · <code>l5_target_derivation.md</code> · <code>implementation_plan_and_impact.md</code> · <code>master_story.md</code>.</p>
+</footer>
+
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral', flowchart: { curve: 'basis' } });
+</script>
+
+</body>
+</html>

@@ -1,7 +1,6 @@
 # Solution Frame v6 — Location Signal (Two Confidences)
 
 **Drafted:** 2026-04-22
-**Predecessor:** `solution_frame_v5.md` (kept; v6 preserves v5's structural gains — phased rollout, payment mechanics, decay-on-every-loop, triplet state, named drains — and moves the Partner Integrity Channel out of the body into Appendix C so the frame stays answerable to the two problems Satyam posed)
 **Primary audience:** Wiom functional leaders — design head, product head, and anyone seeing this problem for the first time.
 **Companion files:** `master_story.md` + `master_story.csv` (the data backbone this frame cites throughout); two Gate 0 thinking contracts in `problem_statements/`.
 
@@ -109,7 +108,7 @@ Claims 1 + 2 justify **activating the R&D belief models as-is** — they are rob
 
 ## §4 — The mental model: two confidences
 
-This is the reframe. v3 laid out 31 capabilities in four groups. v4 collapsed them onto two belief models evaluated sequentially. v6 preserves that, with v5's structural upgrades (phased rollout, payment rewrite, decay-on-loops, triplet state) and moves partner-integrity into Appendix C as a cross-OS workstream on its own timeline.
+This is the reframe. Two belief models evaluated sequentially, a phased rollout that ships business value before model activation completes, and a cross-OS integrity channel kept in Appendix C so the body stays answerable to the two problems Satyam posed.
 
 ### 4.1 — Why two confidences, not one
 
@@ -190,7 +189,7 @@ The model is a function of four classes of signal:
 
 - **HIGH → pass to Gate 2.** No friction.
 - **MID → remedy.** Surface Google Street View of the area: *"is this your street?"* If yes, ask for photo/video from the nearest landmark to the home. If the video resolves → promote to HIGH → pass. If not, route to a CRE / AI verification call (see §5.5 for ownership). If that resolves → promote to HIGH. If not → reject.
-- **LOW → reject or route back.** If the customer insists he is at home but no landmark is relatable: *"please try again from home."* No payment captured at any LOW point.
+- **LOW → text-affirmation or reject.** If no landmark relates and the customer insists she is at home, the app prompts her for a text affirmation — a typed statement that she is at her home right now. **If she affirms** → pass to Gate 2 on the strength of the written confirmation (the affirmation is stored as evidence and becomes part of the booking's audit trail). **If she declines to affirm or abandons** → reject; no payment. No payment is captured anywhere in the LOW path until Gate 2 resolves.
 
 ### 5.4 — The customer is an active participant, not a passive signal
 
@@ -244,11 +243,11 @@ This separation matters because it preserves phase independence — the gate shi
 
 ### 6.5 — The three tiers + actions
 
-- **HIGH** — inside a dense partner polygon, technician trails present, landmarks match install history. Partner is expected to install. **If he declines, he is shown upfront: the landmarks around this booking will be marked unserviceable for him and his polygon shrinks here.** He confirms with that consequence visible.
-- **MID** — edge-of-polygon or landmarks-recognised-but-partner-not-dense. Ask-partner flow fires. Three options, each with a visible consequence shown to the partner **before** he confirms:
-  - **Accept** → promise binds → dispatch. Polygon grows on successful install.
-  - **Decline** → route to next eligible partner. **Polygon shrinks in this hex** (less steeply than a HIGH decline — a MID was an ask, not an assignment, so the signal is softer but not zero). Partner is shown the shrink consequence pre-confirm, same as the HIGH path.
-  - **Verify first** → paid technician visit scheduled. On success: landmark-area opens for partner, success bonus, polygon grows. On verify-visit failure: polygon shrinks similar to a MID decline.
+- **HIGH** — inside a dense partner polygon, technician trails present, landmarks match install history. The partner-facing packet flags each landmark against his history: installed-near-before (*inclusion*), declined-near-before (*exclusion*), or new. Partner is expected to install. **If he declines, he is shown upfront: the booking's landmarks move to his exclusion list and his polygon shrinks here.** He confirms with that consequence visible.
+- **MID** — edge-of-polygon or landmarks-recognised-but-partner-not-dense. Landmark flags (inclusion / exclusion / new) are shown same as HIGH. Ask-partner flow fires. Three options, each with a visible consequence shown to the partner **before** he confirms:
+  - **Accept** → promise binds → dispatch. On successful install, polygon grows and landmarks move to inclusion list.
+  - **Decline** → route to next eligible partner. **Polygon shrinks in this hex**, landmarks move to exclusion list (less steeply than a HIGH decline — a MID was an ask, not an assignment, so the signal is softer but not zero). Partner is shown the shrink consequence pre-confirm, same as the HIGH path.
+  - **Verify first** → paid technician visit scheduled. On success: landmarks move to inclusion list, success bonus, polygon grows. On verify-visit failure: landmarks move to exclusion list, polygon shrinks similar to a MID decline.
 - **LOW** — reject, booking routed to the expansion-demand queue. **Exploration quota (B7) lets a bounded fraction through with explicit partner rotation** — rotation prevents "route-to-nearest" from reinforcing the same partner's blind spot. See §13 for rotation mechanics.
 
 ### 6.6 — The verify-visit journey, end-to-end
@@ -276,9 +275,9 @@ The question: when does the fee get captured?
 
 **Payment is the intent-lock. Once taken, the customer has committed to Wiom; Wiom has committed to deliver — or to make the customer whole.** Abandonment at intent is unrecoverable; refunds are operationally priced.
 
-### 7.2 — Why v4's rule was wrong
+### 7.2 — Why payment fires at promise, not at partner acceptance
 
-v4 said: *"payment fires on partner acceptance for MID serviceability."* The latency argument: partners respond on their own clock; verify-visits take 24-72h. A customer waiting in limbo between *"book now"* and *"payment captured"* is a customer who books with a competitor. The friction is compounded by the existing Wiom data showing 1.92 calls per pair and p90 = 4 *after* acceptance.
+An alternative rule would be to fire payment on partner acceptance — wait until the MID path resolves before taking money. This is wrong on latency: partners respond on their own clock; verify-visits take 24-72h. A customer waiting in limbo between *"book now"* and *"payment captured"* is a customer who books with a competitor. The friction is compounded by today's coordination data showing 1.92 calls per pair and p90 = 4 *after* acceptance — the wait is already material post-payment; compounding it pre-payment breaks intent.
 
 ### 7.3 — The rule, by path
 
@@ -395,7 +394,7 @@ Six stages plus a control pane.
     ╚════════════════════════════════════════════════════════════════════════╝
 ```
 
-Two structural fixes preserved from v5:
+Two structural invariants:
 - **Stage 4 names its drain** (install / cancel / 48h-SLA-miss) — the active-promise stock is not a leak.
 - **Stage 6 labelled "log not state"** — to prevent confusion with state stocks.
 
@@ -477,7 +476,7 @@ The partner's symmetric role (active participant, not a scored object) is addres
 
 ## §12 — Capabilities: what to build, what to reuse
 
-Four groups. Deltas marked **(v6)** for items rewired since v5 to account for integrity moving to the appendix.
+Four groups. Total 42 body capabilities.
 
 ### A. Gate 1 capabilities (User Address Confidence)
 
@@ -510,8 +509,8 @@ Four groups. Deltas marked **(v6)** for items rewired since v5 to account for in
 | B6 | BM2 activation | R | Medium | Q4 |
 | B7 | Exploration quota with partner rotation | N | Medium | Q4 |
 | B8 | Paid verify-visit flow with bonus < HIGH steady-state | N | Medium | Q3 |
-| B9 | **(v6)** Verify-visit outcome capture — technician tag (reached-door / reached-landmark-not-door / could-not-reach) + landmarks-actually-used log; feeds Loops 1 + 2 per §6.6 | N | Medium | Q3 |
-| B10 | **(v6)** Remediated-HIGH × MID path tagging + waived-cost accounting (§7.5) — flow flag + finance pathway absorbing verify-visit cost upstream of partner payout | N | Medium | Q3 |
+| B9 | Verify-visit outcome capture — technician tag (reached-door / reached-landmark-not-door / could-not-reach) + landmarks-actually-used log; feeds Loops 1 + 2 per §6.6 | N | Medium | Q3 |
+| B10 | Remediated-HIGH × MID path tagging + waived-cost accounting (§7.5) — flow flag + finance pathway absorbing verify-visit cost upstream of partner payout | N | Medium | Q3 |
 
 ### C. Partner-facing capabilities (Packet + Feedback)
 
@@ -538,7 +537,7 @@ Four groups. Deltas marked **(v6)** for items rewired since v5 to account for in
 | D5 | Immutable history log (H) | N | Medium | Q3 |
 | D6 | Customer-side difficulty signal monitor | N | Medium | Q4 |
 | D7 | Post-install landmark validation (4 signals) | N | Medium | Q4 |
-| D8 | Cause-code taxonomy (GPS_TRUST / ADDRESS_RESOLUTION / SPATIAL / OPERATIONAL) **(v6)** — INTEGRITY class deferred to Appendix C | N | Quick | Q1 |
+| D8 | Cause-code taxonomy (GPS_TRUST / ADDRESS_RESOLUTION / SPATIAL / OPERATIONAL) — INTEGRITY class deferred to Appendix C | N | Quick | Q1 |
 | D9 | Customer outcome transparency loop | N | Quick | Q1 |
 
 **Counts.** A = 14, B = 10, C = 9, D = 9. Total **42** capabilities in the body. **R (reuse) = 3** (B1, B6, C2). **N (new) = 39**.
@@ -618,26 +617,6 @@ Lag: most metrics 2-4 weeks. Leading operational signals — verification-comple
 - **Both →** three parties hold the same location model at the same quality at every handoff; voice call becomes confirmation, not discovery.
 
 The two workstreams share the capture substrate. Fixing them in parallel is cheaper than fixing them serially. *(The partner-side gaming channel in Appendix C is a third, orthogonal workstream owned cross-OS; it does not substitute for Gates 1 and 2 and they do not substitute for it.)*
-
----
-
-## §17 — What changes from v5 to v6
-
-For readers who know v5:
-
-1. **Integrity channel moved from §6a to Appendix C.** v5's body named a third confidence surface and a phase-4 rollout inside the main frame. v6 keeps that work — unchanged in content — and relocates it to Appendix C so the body stays answerable to the two problem statements Satyam posed.
-2. **Claim 4 retained but demoted.** The 30.8pp same-prob splitter-share finding remains in §3 as a one-paragraph acknowledgment; full mechanism and response in Appendix C.
-3. **§4 reverted to "two confidences"** (not "two confidences + integrity shock channel"). The three-surface summary table drops the Partner Integrity row; that row lives in Appendix C's summary.
-4. **§9 control pane** no longer annotates the integrity cross-connection; same control pane content.
-5. **§10 drops Loop 7** from the main loop table; a note points at Appendix C.
-6. **§11 drops the v5 partner-dashboard paragraph** from the body; same content in Appendix C.
-7. **§12 drops Group E** (8 cross-OS capabilities); they appear in Appendix C with the same IDs.
-8. **§13 phase tagging drops Phase 4** from the body quadrants; Appendix C carries its own Phase 4 rollout.
-9. **§14 drops integrity metrics and recidivism targets** from the body; they live in Appendix C.
-10. **§16 reframed** from "three workstreams" back to "two workstreams" in the body, with the third acknowledged as cross-OS.
-11. **Principles P7-P12 preserved verbatim** from v5. They remain load-bearing for the body. P8 (cause-code fidelity) notes the INTEGRITY class as reserved-for-Appendix-C.
-12. **Appendix A (Genie internals) preserved verbatim.** The three IC-COMMIT bilateral contracts referenced there are now declared in Appendix C's scope, not in Appendix A's.
-13. **Appendix C added** — Partner Integrity Channel, with the v5 §6a content, the v5 Group E capabilities, the v5 §10 Loop 7, the v5 §14 integrity metrics, and the v5 §15 integrity open questions, re-organised as a self-contained cross-OS workstream.
 
 ---
 
