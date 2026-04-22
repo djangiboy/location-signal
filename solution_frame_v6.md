@@ -584,7 +584,10 @@ Nine signals grouped by claim + one gameability control.
 - Gali-stuck call rate: **7.4% → <2%**.
 
 **Gameability control:**
-- **Promise-to-install conversion at held promise volume**: this is the primary NUT-linked target. Tightening the gate to reject everyone drops the other metrics trivially; this one does not, because volume is held. If held-volume conversion rises, the build landed.
+- **Install rate at held promise volume** — the primary NUT-linked target.
+  - **P1 + P2 joint contribution: 40% → ≥49%** (Gate 0 contract commitment; derivation in `l5_target_derivation.md`).
+  - Fully-loaded with model activation (BM1/BM2) + partner expansion: **≥55%** (aspirational, tracked in separate contracts).
+  - Tightening the gate to reject everyone drops the other metrics trivially; this one does not, because volume is held.
 - **Expansion-queue → coverage graduation rate**: LOW bookings routed to the expansion queue cannot be a graveyard. Measured monthly.
 
 *(The 30.8pp same-prob splitter-share gap is an Appendix C target with its own measurement on the cross-OS channel.)*

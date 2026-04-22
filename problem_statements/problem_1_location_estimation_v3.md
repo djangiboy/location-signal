@@ -14,7 +14,7 @@
 
 ### 1. Observed / Expected / Evidence
 
-**Observed.** 25.7% of installed bookings drift beyond GPS apparatus noise — attributable to the customer not being at home when the booking coord was captured, not to GPS physics.
+**Observed.** 25.7% of installed bookings drift beyond GPS apparatus noise. ~22% trace to the customer capturing GPS from not-home (café, shop, neighbour's house); ~3% is a hygiene tail (wrong-locality or tap errors). Both are structural, not GPS physics — this contract addresses both through the capture substrate.
 
 **Expected.** Capture drift (drift beyond apparatus p95 of 155m): <5%. Residual drift stays within apparatus physics.
 
@@ -71,11 +71,11 @@ Wiom commits on an un-interrogated self-report. One lat/long + one customer tap 
 | Verification-completion rate (≥2 landmarks OR corrective loop OR SR-OS resolution) | **Leading** (L2) | 0% | >90% | Daily | New event in booking event log |
 | `partner_reached_cant_find` rate (P1-attributable cut) | L4 | 4.4% | <2% | Weekly | Coordination call-analysis pipeline re-run |
 | Verify-visit success rate (reached-door / all verify-visits) | **Learning** | — (new) | >60% | Weekly | B9 outcome capture |
-| Install rate (installs / promises made) | L5 | 35% | ≥55% (+20pp) | Monthly | Booking event log funnel |
+| Install rate (installs / promises made) | L5 | 40% | ≥49% (+9pp) | Monthly | Booking event log funnel |
 
 *Caveat on Learning signals: baseline not available today. Verify-visit success rate becomes measurable once B8 + B9 ship (Phase 1). First baseline calibrated in Sprint 1.*
 
-*Measurement discipline for L5: install rate is measured at held promise volume. The gate cannot "improve" L5 by rejecting more bookings — volume is the control, calibration is the test.*
+*Measurement discipline for L5: install rate is measured at held promise volume. The gate cannot "improve" L5 by rejecting more bookings — volume is the control, calibration is the test. **Target derivation:** +9pp is the P1 + P2 joint contribution, overlap-adjusted; see `l5_target_derivation.md`. Model activation (BM1/BM2) and partner expansion stack on top of 49% and are tracked in separate contracts.*
 
 ---
 
@@ -119,7 +119,7 @@ Proof of validity for the **Leading indicator** (verification-completion rate):
 
 ### 13. Driver Mapping
 
-**Install rate (installs / promises made).** Baseline 35%, target ≥55%.
+**Install rate (installs / promises made).** Baseline 40%, target ≥49% (P1 + P2 joint; see `l5_target_derivation.md`).
 
 ### 14. NUT Chain
 
@@ -130,7 +130,7 @@ Proof of validity for the **Leading indicator** (verification-completion rate):
 1. Verification-completion rate rises to >90% (leading)
 2. Capture drift rate drops toward <5% (L3)
 3. `partner_reached_cant_find` rate drops toward <2% (L4)
-4. Install rate rises toward ≥55% (L5)
+4. Install rate rises toward ≥49% (L5) — P1 + P2 joint contribution
 
 **Disconfirmation branches:**
 - Step 1 moves, step 2 doesn't → verification features wrong.
@@ -146,7 +146,7 @@ Proof of validity for the **Leading indicator** (verification-completion rate):
 **Capability Build → 2-3 sprints.**
 
 - **Sprint 1** — Close Stage B open slices (drift × `time_bucket`, drift × `booking_accuracy`, declined-cohort comparison). Decide verification feature set + thresholds.
-- **Sprint 2** — Build independent-verification channel (A3 landmark picker + A11 UAC v0 scorer + A6 corrective loop + A14 SR-OS queue) in shadow mode.
+- **Sprint 2** — Build independent-verification channel (landmark-picker substrate + rule-based confidence scorer + two-round corrective loop + ops-queue escape hatch) in shadow mode. Capability mapping per `solution_frame_v6.md` §12 Group A.
 - **Sprint 3** — Switch to commit-gating; monitor; iterate thresholds.
 
 ### 17. Execution Plan
@@ -182,7 +182,7 @@ Proof of validity for the **Leading indicator** (verification-completion rate):
 
 | Leading (verification-completion) | L3 (capture drift) | L5 (install rate) | Decision |
 |---|---|---|---|
-| ≥90% | drops to <5% | rises to ≥55% | **Scale** — roll out all cities; plan learned-model upgrade |
+| ≥90% | drops to <5% | rises to ≥49% | **Scale** — roll out all cities; plan learned-model upgrade |
 | ≥90% | drops to <5% | flat | P1 solved — remaining loss at Point B; **hand off to P2 or further downstream** |
 | ≥90% | flat | — | **Re-investigate** — verification features wrong; close Stage B slices |
 | <90% | — | — | **Redesign** — thresholds too tight or UX too heavy |
@@ -207,4 +207,4 @@ The two problems are **parallel workstreams** resting on a **shared upstream ele
 - This contract uses ≥2 landmark confirmations as the **independent second channel** that verifies home-presence.
 - The companion uses the same confirmed landmark / gali / floor as the **structured fields in the partner's notification**.
 
-Both contracts converge at L5: **install rate 35% → ≥55%.**
+Both contracts converge at L5: **install rate 40% → ≥49%** (P1 + P2 joint contribution, overlap-adjusted). Beyond 49% attributes to model activation (BM1/BM2) and partner expansion — separate workstreams tracked in their own contracts. Full derivation: `l5_target_derivation.md`.

@@ -72,11 +72,11 @@ Wiom has no structured address stock. Customer types free text; Wiom stores it a
 | Calls per partner-customer pair (when calls happen) | L4 | 1.92 | <1.3 | Weekly | Call aggregation by pair |
 | Verify-visit success rate (reached-door / all verify-visits) | **Learning** | — (new) | >60% | Weekly | B9 outcome capture |
 | Technician landmark-arrival correctness (field GPS within 50m of confirmed primary landmark) | **Learning** | — (new) | TBD Sprint 1 | Weekly | D7 field-GPS pipeline |
-| Install rate (installs / promises made) | L5 | 35% | ≥55% (+20pp) | Monthly | Booking event log funnel |
+| Install rate (installs / promises made) | L5 | 40% | ≥49% (+9pp) | Monthly | Booking event log funnel |
 
 *Caveat on Learning signals: baselines not available today. Verify-visit success rate measurable once B8 + B9 ship (Phase 1). Technician landmark-arrival correctness requires A3 + B4 both live — Phase 2+ signal. First full baselines and target calibration are Sprint-1 deliverables for verify-visit success and Phase-2-entry deliverables for landmark-arrival correctness.*
 
-*Measurement discipline for L5: install rate is measured at held promise volume. The gate cannot "improve" L5 by rejecting more bookings — volume is the control, calibration is the test.*
+*Measurement discipline for L5: install rate is measured at held promise volume. The gate cannot "improve" L5 by rejecting more bookings — volume is the control, calibration is the test. **Target derivation:** +9pp is the P1 + P2 joint contribution, overlap-adjusted; see `l5_target_derivation.md`. Model activation (BM1/BM2) and partner expansion stack on top of 49% and are tracked in separate contracts.*
 
 ---
 
@@ -123,7 +123,7 @@ Proof of validity for the **Leading indicator** (structured-address coverage):
 
 ### 13. Driver Mapping
 
-**Install rate (installs / promises made).** Baseline 35%, target ≥55%.
+**Install rate (installs / promises made).** Baseline 40%, target ≥49% (P1 + P2 joint; see `l5_target_derivation.md`).
 
 ### 14. NUT Chain
 
@@ -134,7 +134,7 @@ Proof of validity for the **Leading indicator** (structured-address coverage):
 1. Structured-address coverage rises to >90% (leading)
 2. First-call-location-reason rate drops toward <20% (L3)
 3. Calls per pair drops toward <1.3 (L4)
-4. Install rate rises toward ≥55% (L5)
+4. Install rate rises toward ≥49% (L5) — P1 + P2 joint contribution
 
 **Disconfirmation branches:**
 - Step 1 moves, step 2 doesn't → partners not using the structured address (UI / trust issue).
@@ -150,7 +150,7 @@ Proof of validity for the **Leading indicator** (structured-address coverage):
 **Capability Build → 2-3 sprints.**
 
 - **Sprint 1** — Pull landmark / gali / floor taxonomy from Coordination transcripts; design structured address schema.
-- **Sprint 2** — Ship structured capture (A3, A4, A5); update notification payload (C1) to carry structured address with per-field confidence; wire landmark-grounded serviceability (B5).
+- **Sprint 2** — Ship structured capture (landmark picker + gali/floor structured fields + optional photo); update notification payload to carry structured address with per-field confidence; wire landmark-grounded serviceability. Capability mapping per `solution_frame_v6.md` §12 Groups A, B, C.
 - **Sprint 3** — Roll out partner-side UI; monitor; iterate schema.
 
 ### 17. Execution Plan
@@ -187,7 +187,7 @@ Proof of validity for the **Leading indicator** (structured-address coverage):
 
 | Leading (structured coverage) | L3 (first-call-reason) | L5 (install rate) | Decision |
 |---|---|---|---|
-| ≥90% | drops to <20% | rises to ≥55% | **Scale** — roll out all cities |
+| ≥90% | drops to <20% | rises to ≥49% | **Scale** — roll out all cities |
 | ≥90% | drops to <20% | flat | P2 solved — bottleneck elsewhere; **hand off to Partner Management** |
 | ≥90% | flat | — | Partners not using structured address — **fix UI / trust**, not capture |
 | <90% | — | — | **Redesign capture** — schema too heavy or flow too long |
@@ -212,4 +212,4 @@ The two problems are **parallel workstreams** resting on a **shared upstream ele
 - Companion contract uses ≥2 landmark confirmations as the **independent second channel** that verifies home-presence.
 - This contract uses the same confirmed landmark / gali / floor as the **structured fields in the partner's notification**.
 
-Both contracts converge at L5: **install rate 35% → ≥55%.**
+Both contracts converge at L5: **install rate 40% → ≥49%** (P1 + P2 joint contribution, overlap-adjusted). Beyond 49% attributes to model activation (BM1/BM2) and partner expansion — separate workstreams tracked in their own contracts. Full derivation: `l5_target_derivation.md`.
