@@ -1,0 +1,82 @@
+Let's start with capturing the story with data.
+We'll break the story across the journey:
+
+From all Stories we have written, fill up for these parts on what happens as of today:
+
+Part A: When customer gives GPS:
+A. Is there a Jitter?
+When we analyse data of installed locations, we see jitter is less due to devices and environmental factors.
+Show distribution of jitter across mobiles (max coverage data)
+
+
+B. Also mention a component of the flow: 
+Once we get the Lat longs, we do 25m check, and if serviceable, we collect text addresses of customers
+
+What's missing: We dont get constant GPS coordinates in the journey. If we get that, we can also model that into serviceability decisioning. 
+
+Part B: Then we proceed to allocation
+
+A. Here, we see that despite jitter being present, 
+- the install rate across partner-booking matches rank order
+- Also, the decline decisions (strict, area not understandable) rank order with distance
+
+B. Moreover, when we use a better model than distance, that is self learning and learns from partner's historic install and decline decisions, we see:
+- Better rank ordering of install rates across partner booking matches
+- Better separation of decline decisions
+
+Keep tables of the two above.
+
+
+Part C: Once a partner accepts a booking and assigns it, we try to understand how he coordinates with customer
+A. He sees the location on map with nearby installs data on FPN, once he accepts it, that information vanishes and then all he has to work is the long text string that customer has input. So he calls and coordinates with him
+
+B. We understand what they talk about: 36% (area not understandable) + 4% (partner reached cant find). We see that install rates are different across the two
+Also, we see that post assignment, this conversation on address confirmation happens irrespective of how far the location is (distance deciles), or what the prob is. Monotonicity earlier seen, is no longer evident post acceptance. 
+
+Show data above
+
+C. Also there is a pattern in conversations: 
+When in the calls across the address not clear matches, we see if understanding is established or not, then from initial discussions, it seems that 46% (one sided confusion) + 31.5% (mutual failure) 77.5% calls still have confusion and the install rates post that are lesser than when there is no confusion.
+For pairs with multiple calls, we collect every call's comm_quality and take the pessimistic rollup (mutual > one_sided > clear > NA). Answers: did the partner-customer pair EVER have mutual breakdown?
+When things are clear on the IVR calls, 10% higher install rates seen. 
+Show data
+
+D. And then, we overlay spatial intelligence of partner serviceable boundaries, created via Partner SE zones, to see if this confusion exists inside vs outside, and if better installations happen inside vs outside. 
+
+We see address not clear rates are higher, for inside vs outside, but whats also higher is the install rates. 
+We see, that for address related issues on call, the recovery is way higher in terms of install rates when inside the polygon vs when outside. whether it was mutual failure or one sided failure or calrity achieved on call
+
+Show data bove. 
+
+
+What's missing: 
+- Not every partner coordinates on IVR. They also exchange numbers with customers and have conversations separately. We can use the IVR call logs only for a directional analysis. Show data on missing items if you can.
+
+- We also dont get stream of GPS coordinates of partners or Rohits to identify if 
+
+
+Part D:
+Once installation happens,
+A. Because of all of this that is happening, the installation location and booking location differs. 
+
+Show distribution across deciles of the two distances. The full distribution.
+
+B. Also, We couldnt find much variation in installs' install time based on call topic: address related query vs others. 
+
+The solution that we create, will be focused on:
+1. Ensuring verifieable booking information is coming before promise is made
+2. The same information, is usable for partners so that they can act fast and don't spend time on coordination and install. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+

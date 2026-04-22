@@ -63,6 +63,14 @@ OUT_ELIG      = INV / "polygon_eligibility.csv"
 OUT_IO_REASON = INV / "inside_vs_outside_by_reason.csv"
 OUT_IO_INSTALL= INV / "inside_vs_outside_install_rate.csv"
 OUT_DIST_DEC  = INV / "inside_distance_deciles.csv"
+OUT_CQ_ADDR   = INV / "comm_quality_address_by_polygon_side.csv"
+OUT_ADDR_RECON= INV / "address_family_reconciliation.csv"
+
+ADDRESS_FAMILY = {
+    "address_not_clear", "address_too_far", "address_wrong",
+    "building_access_issue", "partner_reached_cant_find",
+}
+COMM_ORDER = ["mutual_failure", "one_sided_confusion", "clear", "not_applicable"]
 
 WGS = "EPSG:4326"
 UTM = "EPSG:32643"  # UTM zone 43N — covers Delhi
@@ -278,6 +286,95 @@ def main():
         print(s.to_string(index=False))
 
     print(f"\nWROTE {OUT_DIST_DEC}")
+
+    # ====================================================================
+    # (d) COMM_QUALITY_WORST x ADDRESS-FAMILY x POLYGON_SIDE
+    # ====================================================================
+    print("\n" + "=" * 75)
+    print("(d) comm_quality_worst x address-family x polygon_side")
+    print("=" * 75)
+    eligible = out[out["has_polygon"]].copy()
+    eligible["is_address"] = eligible["primary_first"].isin(ADDRESS_FAMILY)
+    eligible["bucket"] = eligible["is_address"].map(
+        {True: "address_related", False: "non_address_related"})
+    total_elig = len(eligible)
+    print(f"Eligible (with polygon) pairs: {total_elig:,}")
+
+    cq = (eligible.groupby(["comm_quality_worst", "bucket", "polygon_side"])
+                   .agg(n=("installed", "size"),
+                        installed=("installed", "sum"))
+                   .reset_index())
+    cq["share_of_elig_%"] = (cq["n"] / total_elig * 100).round(1)
+    cq["install_rate_%"]  = (cq["installed"] / cq["n"] * 100).round(1)
+
+    # Order: comm bucket -> address_related first -> inside before outside
+    cq["_ord_c"] = cq["comm_quality_worst"].map({k:i for i,k in enumerate(COMM_ORDER)})
+    cq["_ord_b"] = cq["bucket"].map({"address_related":0, "non_address_related":1})
+    cq["_ord_s"] = cq["polygon_side"].map({"inside":0, "outside":1})
+    cq = (cq.sort_values(["_ord_c", "_ord_b", "_ord_s"])
+            .drop(columns=["_ord_c","_ord_b","_ord_s"])
+            .reset_index(drop=True))
+
+    # Wide form: for each (comm, bucket) row, inside/outside side-by-side with gap
+    wide = cq.pivot_table(index=["comm_quality_worst","bucket"],
+                           columns="polygon_side",
+                           values=["n", "installed", "install_rate_%"],
+                           aggfunc="first")
+    wide.columns = [f"{side}_{metric}" for metric, side in wide.columns]
+    wide = wide.reset_index()
+    for side in ("inside", "outside"):
+        for c in (f"{side}_n", f"{side}_installed"):
+            if c in wide.columns:
+                wide[c] = wide[c].fillna(0).astype(int)
+    wide["gap_pp"] = (wide.get("inside_install_rate_%", 0)
+                      - wide.get("outside_install_rate_%", 0)).round(1)
+    wide["_ord_c"] = wide["comm_quality_worst"].map({k:i for i,k in enumerate(COMM_ORDER)})
+    wide["_ord_b"] = wide["bucket"].map({"address_related":0, "non_address_related":1})
+    wide = (wide.sort_values(["_ord_c","_ord_b"])
+                 .drop(columns=["_ord_c","_ord_b"])
+                 .reset_index(drop=True))
+
+    print("\n--- LONG (one row per comm x bucket x side) ---")
+    print(cq.to_string(index=False))
+    print(f"  SUM n = {cq['n'].sum():,}  (should equal {total_elig:,})")
+
+    print("\n--- WIDE (inside vs outside side-by-side) ---")
+    print(wide.to_string(index=False))
+
+    # Persist BOTH forms stacked, with a `view` column
+    cq["view"]   = "long"
+    wide["view"] = "wide"
+    combined = pd.concat([cq, wide], ignore_index=True, sort=False)
+    combined.to_csv(OUT_CQ_ADDR, index=False)
+    print(f"\nWROTE {OUT_CQ_ADDR}")
+
+    # ====================================================================
+    # (d1) RECONCILIATION — how "address_related" decomposes into 5 reasons
+    # ====================================================================
+    print("\n" + "=" * 75)
+    print("(d1) Address-family reconciliation — parent cohort vs polygon-eligible")
+    print("=" * 75)
+    recon_rows = []
+    for reason in sorted(ADDRESS_FAMILY):
+        parent_n   = int((out["primary_first"] == reason).sum())
+        elig_n     = int((eligible["primary_first"] == reason).sum())
+        dropped    = parent_n - elig_n
+        recon_rows.append({
+            "primary_first":      reason,
+            "parent_cohort_n":    parent_n,
+            "polygon_eligible_n": elig_n,
+            "dropped_no_polygon": dropped,
+        })
+    recon_rows.append({
+        "primary_first":      "TOTAL_address_family",
+        "parent_cohort_n":    sum(r["parent_cohort_n"]    for r in recon_rows),
+        "polygon_eligible_n": sum(r["polygon_eligible_n"] for r in recon_rows),
+        "dropped_no_polygon": sum(r["dropped_no_polygon"] for r in recon_rows),
+    })
+    recon = pd.DataFrame(recon_rows)
+    print(recon.to_string(index=False))
+    recon.to_csv(OUT_ADDR_RECON, index=False)
+    print(f"WROTE {OUT_ADDR_RECON}")
 
 
 if __name__ == "__main__":

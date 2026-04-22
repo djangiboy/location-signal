@@ -4,6 +4,7 @@
 **Parent:** `../` (`location_signal_audit/`) — one of three engine-scoped audits of location signal fidelity across Wiom's matchmaking funnel.
 **Cohort:** Delhi, Dec 2025 bookings · **Non-BDO filter applied throughout**
 **Last run:** 2026-04-19 · **Status:** Analysis complete. Primary answers below.
+**Feeds into:** `../master_story.md` Part B (narrative) and `../master_story.csv` (tables B.1 distance decile + separations, B.2 prob decile, B.3 side-by-side + conditional-accept diagnostic, plus Appendix splitter-share gaming). Parent synthesis; this folder is source of truth for Allocation.
 
 ## Where this sits in the funnel
 

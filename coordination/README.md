@@ -6,6 +6,7 @@
 **Scale:** 4,930 unique call recordings · 2,561 (mobile, partner) pairs · 20,367 allocation cohort.
 **Created:** 2026-04-19 · **Updated:** 2026-04-20
 **Status:** Full end-to-end run complete (2026-04-19). V2 classifier deployed after pilot review. Address-chain classifier + findings added 2026-04-20. README / STORY updates (incl. polygon cross-cut) committed 2026-04-20 afternoon.
+**Feeds into:** `../master_story.md` Part C (narrative — C.A flow, C.B primary reason + monotonicity collapse, C.C comm_quality, C.G install-time non-discrimination, C.missing data gaps) and `../master_story.csv` (tables C.B primary_reason, C.B ANC transcript rate by distance/prob decile, C.B monotonicity summary, C.C pair-level + within-ANC comm_quality, C.missing monthly no-call, D.B install-time by bucket). Parent synthesis; this folder is source of truth for Coordination.
 
 ---
 

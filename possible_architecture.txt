@@ -1,0 +1,111 @@
+So, these are my inferences:
+
+
+
+Our judgements are not structurally sound
+- We dont validate input quality
+--> Is the prospect customer giving us his right home address, from home GPS: 50%+ installed locations have high distance drift
+--> No validation on which locality, gali, floor he stays in, which partners need.
+--> Is his GPS affected by variations? due to environmental factors?: MOst have less jitter, but no way to find at booking
+
+- And is the logic to determine a promise right?
+--> We just use 25m distance cut. It doesn't learn from downstream decisions
+--> No mechanisms in production that can make promises as per where partner services and where he doesnt. We have mechanisms in R&D, but not deployed. 
+--> We dont use GPS modelling to identify jitter
+
+And unnecessary coordinations happen downstream, 
+
+- Partner is not given a lead basis his serviceability capability
+--> We have no idea of where his team roams around, where he can service
+--> Our models are note deployed yet, that act on his install/decline decisions
+
+- Nor is he given address as per how customer perceives his address
+--> No signal given to customer to inform the difficulty being faced
+
+- Thus he has to put in efforts to find where to install: 36% calls done to confirm addresses + 4% more to identify where to go on reaching the landmark/locality
+--> No judgement of his already present base is used in making the location relatable for him
+--> He gets the text string
+
+,
+
+If we can create a solution, that:
+- Ensures customer gives address from home, with a corrective loop in place
+- Ensures that right logic is used to determine ease of installation at partner's end
+- Give partner right leads
+- With relatable addresses
+- And assist if he has trouble finding location
+
+
+Then installs can go up. 
+
+
+
+One system architecture that comes to mind:
+
+
+Step 1: Do gating to get verified inputs:
+Once we get GPS:
+- Establish if jitter exists or not: If high, then ask customer to give GPS from open area  OR trigger manual intervention
+- Show customer nearby localities. If relatable, then ask him to select closest ones. If not, then re-confirm if home address is given or not. If he says no, Ask him to submit, after he reaches home. Validate his home address GPS with night time GPS pings also. If he says home address given, but localities are not relatable, ask him to input them in text. This is the last mile fall back. 
+
+But, based on landmark relatability, we establish if he is actually at home or not. 
+
+Edge case: He is booking from near his landmark, not from home. 
+Validate the distance between GPS and landmark at night via control pane below. 
+
+Also, establish contract with partner to service around given landmarks. Later, we can build a model on landmarks in his serviceability zones.
+
+Step 2: Build belief model that can identify serviceability with ease:
+- If GPS is in dense partner network, Partner executives also visit these places via their GPS track, high confidence -> These should have relatable landmarks
+- If GPS is in edges or outside serviceable address, Mid confidence ->
+- Else Low confidence
+
+Currently this is modelled only on 25m distance. 
+
+Step 3: Do governance on the confidence layers:
+- High confidence: Ask customer to input gali and floor
+- Mid confidence: Pull google streetview for customer. Ask him to confirm if this is his area. If not, ask him to show photos
+- Low confidence: Reject the customer
+
+
+
+Step 4: If passed with all information acquired, make promise and add it to an active promise exposure stock:
+
+- We now have verified landmark, gully and floor
+- Give it to partner: 
+-- > Landmark is in his serviceability zone: Tell him he has to serve around this landmark. Give gully and floor as optional information 
+-- > Landmark and GPS of customer in margins of serviceability zones: Ask him if he can install
+-- > 
+
+Control Pane:
+- Monitors for actual location confirmation: Night time GPS vs what is given
+- Monitors see if partner is making visits or not, Nudge him for help if he hasnt installed yet
+- Mark area as unserviceable if partner doesn't install, shows partner that these zones are getting red. 
+- Triggers training of belief model
+
+
+
+Step 5: End outcomes go to a immuatable memory
+- Which has information on GPS pings
+- Information on selected landmarks 
+- Has information on partner inputs like calls done, visits, topics discussed, actions taken (install/decline)
+- Used by control pane to trigger belief model training
+
+
+Leading signals on promise packet:
+-> Are night time GPS different from what is provided at booking? -> Trigger intervention, notify partner of address shady, get right information
+-> Is partner visiting the location prior to installation time? -> If not, trigger intervention
+-> Is address clarity issue still coming on call? Trigger intervention to get right location from customer and partner. 
+-> Is photo relatable once reaching near home?
+
+Lagging signals:
+-> More installations happen
+-> Distance drift of installs from booking location reduces
+
+
+Anchors:
+- Partners have to serve in their servceibale zones, Around their landmarks
+- Customers have to give right home address for a promise to be made. 
+
+
+

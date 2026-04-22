@@ -4,6 +4,7 @@
 **Polygon source:** `promise_maker/B/training/partner_cluster_boundaries.h5` (copied here).
 **Created:** 2026-04-20 11:27 · **Updated:** 2026-04-20 15:30
 **Status:** End-to-end run complete. Address-chain × polygon cross-cut added 2026-04-20 afternoon.
+**Feeds into:** `../../master_story.md` Part C.D (narrative — polygon eligibility, inside/outside asymmetry, 8-cell MECE grid, addr-chain × polygon danger cell, chain-engagement protective effect) and `../../master_story.csv` (tables C.D polygon eligibility, C.D ANC by polygon-side, C.D 8-cell MECE, C.D addr_chain × polygon, C.D chain-engagement share, C.E chain-engagement × polygon protective gap). Parent synthesis; this folder is source of truth for the partner-polygon overlay.
 
 ---
 

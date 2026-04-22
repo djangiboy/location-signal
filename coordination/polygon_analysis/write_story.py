@@ -123,6 +123,84 @@ def build():
       "The polygon side does NOT change what partners talk about much — "
       "it changes whether the conversation converts to install.")
 
+    # 5b. comm_quality_worst x address-family x polygon_side (MECE, sums to 2,499)
+    sec("5b. comm_quality_worst × address-family × polygon_side")
+    p("Each eligible pair (n=2,499) lands in exactly one of "
+      "4 comm_quality × 2 address-family × 2 polygon_side = 16 cells. "
+      "Address family = primary_first in {address_not_clear, address_too_far, "
+      "address_wrong, building_access_issue, partner_reached_cant_find}.")
+    blank()
+    cq = pd.read_csv(INV / "comm_quality_address_by_polygon_side.csv")
+    wide = cq[cq["view"] == "wide"].copy()
+    cols = ["comm_quality_worst", "bucket",
+            "inside_n", "inside_installed", "inside_install_rate_%",
+            "outside_n", "outside_installed", "outside_install_rate_%",
+            "gap_pp"]
+    # Coerce int columns that pandas read as floats
+    for c in ["inside_n","inside_installed","outside_n","outside_installed"]:
+        wide[c] = wide[c].astype(int)
+    wide = wide[cols]
+    R += table_rows(wide, num_cols={
+        "inside_n":0, "inside_installed":0,
+        "outside_n":0, "outside_installed":0,
+        "inside_install_rate_%":1, "outside_install_rate_%":1,
+        "gap_pp":1,
+    })
+    blank()
+    p("Row totals (sanity): "
+      f"inside n = {int(wide['inside_n'].sum()):,}, "
+      f"outside n = {int(wide['outside_n'].sum()):,}, "
+      f"combined = {int(wide['inside_n'].sum()+wide['outside_n'].sum()):,} "
+      "= 2,499 eligible pairs.")
+    blank()
+    p("Reads:")
+    p("  1. INSIDE BEATS OUTSIDE IN EVERY CELL — gap is +10 to +25pp across "
+      "all 8 (comm × bucket) rows. The polygon-side effect is stable ACROSS "
+      "comm quality and ACROSS address vs non-address.")
+    p("  2. Within each comm bucket, address-related pairs install BETTER "
+      "than non-address-related ON BOTH SIDES of the polygon. Address "
+      "friction is surmountable regardless of polygon side — it just "
+      "resolves more often inside.")
+    p("  3. Bottom-of-the-barrel cell: not_applicable × non_address_related "
+      "× outside = 58 pairs, 20.7% install. Non-address terminal friction "
+      "(cancellations, unreachable, wrong_customer) combined with "
+      "outside-polygon is the worst cocktail.")
+    p("  4. Top-of-the-barrel cells: clear × address_related × inside "
+      "(68.1%, n=119) and not_applicable × address_related × inside "
+      "(75.0%, small n=12). When the conversation was clean and the "
+      "friction was address-family and the booking was inside the "
+      "polygon — installs near-always happen.")
+    p("  5. mutual_failure × address_related shows the largest reliable gap "
+      "(n=387 inside vs n=124 outside, +21pp). Even when both parties "
+      "struggled on address, being inside the polygon recovered 60% of "
+      "those pairs vs only 40% outside.")
+    blank()
+
+    # --- Totals drill-down: how the 2,499 eligible pairs compose
+    p("Totals drill-down — where the n's in the grid come from:")
+    blank()
+    p("  Polygon-eligible cohort: 2,499 pairs "
+      "(= 2,561 parent cohort − 62 pairs whose partner has no polygon).")
+    p("  Inside polygon: 1,939. Outside polygon: 560.")
+    blank()
+    p("  address_related total = 1,065 pairs, drilled down by primary_first:")
+    recon = pd.read_csv(INV / "address_family_reconciliation.csv")
+    R += table_rows(recon, num_cols={
+        "parent_cohort_n": 0, "polygon_eligible_n": 0, "dropped_no_polygon": 0,
+    })
+    blank()
+    p("  Note: headline 927 (parent analysis) = strictly "
+      "primary_first = address_not_clear. The address-family bucket used "
+      "in the 5b grid is a broader superset of 5 primary_first reasons "
+      "(1,089 at parent, 1,065 polygon-eligible after dropping 24 pairs "
+      "without polygons — 20 of those are ANC).")
+    p("  non_address_related total = 1,434 pairs (= 2,499 − 1,065) — "
+      "i.e. everything else (noise_or_empty, slot_confirmation, "
+      "customer_postpone / cancelling / unreachable, wrong_customer, "
+      "price_or_plan_query, duplicate, partner_postpone / no_show, "
+      "install_site_technical, payment, competitor, router, other).")
+    blank()
+
     # 6. address_not_clear pair install rate by side
     sec("6. address_not_clear pairs: install rate by side")
     R.append(["polygon_side","pairs","installed","install_rate_%"])

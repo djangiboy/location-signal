@@ -16,6 +16,33 @@ If the coordinate is noisy at capture, every downstream decision (25m gate, GNN 
 
 ---
 
+## Canonical master story (data backbone)
+
+The cross-engine audit is synthesized into a single narrative + structured data backbone. These are the canonical reads once all four sub-folder stories are complete:
+
+| File | What it is |
+|---|---|
+| [`master_story.md`](./master_story.md) | Narrative walk-through of the signal from capture → allocation → coordination → install. Reads end-to-end. Stripped of solution framing (that lives in `solution_frame.md`). |
+| [`master_story.csv`](./master_story.csv) | Structured data backbone — every table in the MD (deciles, quantiles, cross-cuts, eligibility splits) in proper wide-table form, with source citations pointing to the sub-folder STORY.csv files. |
+| [`narration_master_story.txt`](./narration_master_story.txt) | Original outline Maanas authored; the MD and CSV were built from this spine. |
+
+Sub-folder STORY.csv + README files remain the source of truth for their respective engines. The master story synthesizes and never duplicates — if a number is in the master, the sub-folder is its origin.
+
+---
+
+## Solution frame (capability-level, built on the master story)
+
+Once the data backbone is in place, the solution frame names WHAT the system does at the capability and signal layer — not HOW any component is engineered.
+
+| File | What it is |
+|---|---|
+| [`solution_frame.md`](./solution_frame.md) | Capability-level frame for the cross-engine solution. Six-stage pipeline (Gate → Belief Model 1: can-we-service → Governance → Active Promise Exposure → Belief Model 2: best-partner → Immutable Memory), with a control pane running alongside. Capabilities grouped customer-facing (A) / promise-making (B) / partner-facing (C) / control-pane (D), each tagged with backend / frontend / content nature. Includes non-negotiable anchors, belief-model integrity argument (orthogonal workstreams: partner-signal is not corrupted by customer-side GPS noise — independently validated by master story B.1, B.2, C.A), leading + lagging signals, explicit out-of-scope block, open questions. |
+| [`possible_architecture.txt`](./possible_architecture.txt) | Raw-notes predecessor from Maanas. `solution_frame.md` is the articulated version. |
+
+**Principle:** the solution frame stays at capability level. Engineering mechanics (decay, confidence triplets, retry logic, state-machines, API shapes, layered-containment logic, cause-code taxonomy extension, temporal-anchor mining, gaming-score separation, w3w / pincode reverse-geocode / text-reverse-lookup internals) are explicitly out-of-scope in the frame and land at build time. Specific intervention triggers for control-pane signals (night-GPS divergence, partner visit nudges, customer-difficulty interventions, on-ground navigation assist) are designed once data flows.
+
+---
+
 ## The three engines
 
 | Stage | Subfolder | Question | Status |

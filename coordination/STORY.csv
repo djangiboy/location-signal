@@ -1,6 +1,6 @@
 # Partner <-> Customer Call Transcription Analysis
 Created: 2026-04-19
-Updated: 2026-04-20T15:33
+Updated: 2026-04-21T12:56
 Cohort: Delhi · Jan-Mar 2026 · non-BDO. Ground-truth complement to ../location_accuracy/ dropdown analysis.
 ""
 ""
@@ -299,6 +299,30 @@ payment_issue,28.6,31.4,7
 address_too_far,5.6,17.6,5
 building_access_issue,24.7,21.1,5
 ""
+## 11b. Time-to-install percentiles — address vs non-address (installed only)
+""
+Question: pairs with address friction / mutual confusion on call — do they burn more hours between decision and install than pairs where the call surfaced non-address reasons?
+""
+"Cohort: 1,317 installed pairs. Split MECE by primary_first: address_related = {address_not_clear, address_too_far, address_wrong, building_access_issue, partner_reached_cant_find}. non_address_related = everything else (noise_or_empty, slot_confirmation, customer_postpone, etc.)."
+""
+bucket,n,min,p25,median,mean,p75,p90,p95,p99,max
+ALL_INSTALLED,"1,317",0.29,5.57,20.80,27.76,28.39,49.56,70.52,182.06,"1,388.65"
+address_related,642,0.29,5.53,18.97,26.52,27.82,49.54,70.38,179.21,847.55
+non_address_related,675,0.45,5.68,21.63,28.95,29.07,49.46,70.68,180.05,"1,388.65"
+""
+"Split check: address_related n=642 + non_address_related n=675 = 1,317 = 1,317 installed pairs. Clean MECE."
+""
+COUNTER-INTUITIVE read — address friction is NOT a time-burner (conditional on eventually installing):
+  median:  address 19.0h vs non-address 21.6h  (address is +2.7h)
+  p75:     address 27.8h vs non-address 29.1h
+  p90:     address 49.5h vs non-address 49.5h  (essentially tied)
+  p95:     address 70.4h vs non-address 70.7h  (tied)
+"  max:     address 848h  (35d) vs non-address 1,389h  (58d)  — non-address carries the longer tail"
+""
+"Interpretation: the pairs that installed despite non-address friction (customer postponed, price dispute, wrong_customer, noise calls) are slower to get over the line than pairs that negotiated through address confusion. Once address gets resolved — usually within one follow-up call — the install proceeds on the normal ~20h track. Non-address issues like postponement or price query drag the scheduling window further. The >7d tail (58 days max) lives on the non-address side."
+"Caveat: this conditions on installed. The story for non-installed pairs is in Section 5b — non-address primary_first buckets (customer_cancelling 2.4% install, address_too_far 16.7%, etc.) are where terminal failure concentrates. So non-address burns time when it installs, AND kills the install more often when it doesn't."
+""
+""
 ## 12. Transcript vs dropdown — the headline finding
 ""
 metric,dropdown (../location_accuracy),transcript (here)
@@ -364,13 +388,29 @@ So 'address failure' decomposes to:
 ""
 "For pairs with multiple calls, we collect every call's comm_quality and take the pessimistic rollup (mutual > one_sided > clear > NA). Answers: did the partner-customer pair EVER have mutual breakdown?"
 ""
-comm_quality_worst,n,"% of 2,561 pairs"
-mutual_failure,"1,028",40.1%
-one_sided_confusion,845,33.0%
-clear,414,16.2%
-not_applicable,274,10.7%
+comm_quality_worst,n,"% of 2,561 pairs",installed,install_rate_%
+mutual_failure,"1,028",40.1%,522,50.8%
+one_sided_confusion,845,33.0%,449,53.1%
+clear,414,16.2%,246,59.4%
+not_applicable,274,10.7%,100,36.5%
+TOTAL,"2,561",100.0%,"1,317",51.4%
 ""
-40% of pairs had at least one mutual-breakdown call. Higher than the call-level 26% because multi-call pairs accumulate exposure.
+"40% of pairs had at least one mutual-breakdown call. Higher than the call-level 26% because multi-call pairs accumulate exposure. not_applicable installs WORST (36.5%) — that bucket is dominated by noise_or_empty calls, which are a terminal communication failure."
+""
+"MECE split: each comm_quality_worst bucket split by whether the pair's primary_first sits in the address family (address_not_clear, address_too_far, address_wrong, building_access_issue, partner_reached_cant_find). Eight rows sum back to the full cohort."
+""
+comm_quality_worst,bucket,n,"% of 2,561",installed,install_rate_%
+mutual_failure,address_related,525,20.5%,293,55.8%
+mutual_failure,non_address_related,503,19.6%,229,45.5%
+one_sided_confusion,address_related,404,15.8%,244,60.4%
+one_sided_confusion,non_address_related,441,17.2%,205,46.5%
+clear,address_related,146,5.7%,95,65.1%
+clear,non_address_related,268,10.5%,151,56.3%
+not_applicable,address_related,14,0.5%,10,71.4%
+not_applicable,non_address_related,260,10.2%,90,34.6%
+TOTAL,,"2,561",100.0%,"1,317",51.4%
+""
+"Read: within EVERY comm_quality bucket, address-related pairs install BETTER than non-address-related. Address friction is surmountable — gets resolved on a follow-up call. Non-address problems (cancellations, price, wrong_customer, unreachable) are the terminal ones. Biggest gap is in not_applicable (noise-dominated): non-address installs ~35%, address installs ~71% — confirming noise_or_empty is a real install killer for non-address reasons, not a classifier artifact."
 ""
 ""
 ## 12d. Address-chain drill-down (LANDMARK -> GALI -> FLOOR)

@@ -6,6 +6,7 @@
 **Analysis period:** **2025-09-01 → 2026-01-26** (query date range — every `wifi_connected_location_captured` event emitted in this window is the input).
 **Cohort scope:** pan-India mobiles that emitted this event in the window (unit of analysis = mobile, not booking).
 **Status:** Stage A complete as of 2026-04-20. `STORY.csv` committed. Stage B is next.
+**Feeds into:** `../../master_story.md` Part A (narrative) and `../../master_story.csv` (tables A.1a per-ping quantile, A.1b per-ping decile, A.1c per-mobile worst-case). Parent synthesis; this folder is source of truth for Stage A.
 
 ---
 

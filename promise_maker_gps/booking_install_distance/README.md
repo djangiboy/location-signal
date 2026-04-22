@@ -8,6 +8,7 @@
 - **Install pings**: **2025-12-01 → 2026-02-28** (2-month lookahead so late installs aren't missed; first `wifi_connected_location_captured` event per mobile, post-install).
 - **Cohort**: Delhi · Dec 2025 fee-captured bookings · `lead_state = 'installed'` · Python-side filtered to `bdo_lead = 0`.
 - **Status**: scaffolded 2026-04-20. Query drafted. Not yet pulled.
+- **Feeds into:** `../../master_story.md` Part D.A (narrative) and `../../master_story.csv` (tables D.A drift decile, D.A drift quantile, D.A Stage A vs Stage B ratio, D.A drift decomposition by cause). Parent synthesis; this folder is source of truth for Stage B.
 
 ---
 
